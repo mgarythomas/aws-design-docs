@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Corporate Action Payload",
+  "description": "JSON schema for the payload of a submission with type 'CORPORATE_ACTION', based on ISO 20022 seev.031.",
+  "type": "object",
+  "properties": {
+    "corporateActionGeneralInformation": {
+      "type": "object",
+      "description": "High-level details about the corporate action event.",
+      "properties": {
+        "officialCorporateActionEventID": {
+          "type": "string",
+          "description": "Official, unique identifier for the corporate action event."
+        },
+        "eventType": {
+          "type": "string",
+          "description": "Specifies the nature of the event.",
+          "enum": ["DVCA", "SPLF", "MRGR", "RHTS"]
+        },
+        "mandatoryVoluntaryEventType": {
+          "type": "string",
+          "description": "Specifies whether the event is mandatory, voluntary, or mandatory with options.",
+          "enum": ["MAND", "VOLU", "CHOS"]
+        }
+      },
+      "required": ["officialCorporateActionEventID", "eventType", "mandatoryVoluntaryEventType"]
+    },
+    "underlyingSecurity": {
+      "type": "object",
+      "description": "Identifies the financial instrument affected by the event.",
+      "properties": {
+        "isin": {
+          "type": "string",
+          "description": "International Securities Identification Number (ISIN).",
+          "pattern": "^[A-Z]{2}[A-Z0-9]{9}[0-9]$"
+        },
+        "ticker": {
+          "type": "string",
+          "description": "The exchange-specific ticker symbol."
+        }
+      },
+      "required": ["isin"]
+    },
+    "corporateActionDetails": {
+      "type": "object",
+      "description": "Provides the specific dates, rates, and prices associated with the event.",
+      "properties": {
+        "dates": {
+          "type": "object",
+          "properties": {
+            "announcementDate": { "type": "string", "format": "date" },
+            "exDate": { "type": "string", "format": "date" },
+            "recordDate": { "type": "string", "format": "date" },
+            "paymentDate": { "type": "string", "format": "date" }
+          },
+          "required": ["announcementDate", "recordDate", "paymentDate"]
+        },
+        "rateAndPrice": {
+          "type": "object",
+          "properties": {
+            "grossDividendRate": {
+              "type": "object",
+              "properties": {
+                "amount": { "type": "number", "exclusiveMinimum": 0 },
+                "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+              },
+              "required": ["amount", "currency"]
+            }
+          }
+        }
+      },
+      "required": ["dates"]
+    },
+    "options": {
+      "type": "array",
+      "description": "Provides details about the choices available to shareholders.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "optionNumber": { "type": "string" },
+          "optionType": {
+            "type": "string",
+            "enum": ["CASH", "SECU", "LAPS"]
+          },
+          "defaultOption": { "type": "boolean" }
+        },
+        "required": ["optionNumber", "optionType"]
+      }
+    }
+  },
+  "required": [
+    "corporateActionGeneralInformation",
+    "underlyingSecurity",
+    "corporateActionDetails",
+    "options"
+  ]
+}

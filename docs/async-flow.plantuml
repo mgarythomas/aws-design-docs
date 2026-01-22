@@ -1,0 +1,63 @@
+@startuml
+!theme mars
+autonumber
+
+box "DMZ VPC (Public)" #FFF8E1
+    actor "Client / NextJS" as Client
+    participant "Ext API Gateway" as ExtAPIGW
+    participant "Lambda Proxy" as DMZProxy
+end box
+
+box "Internal VPC (Private)" #E3F2FD
+    participant "Int API Gateway" as IntAPIGW
+    participant "Publisher Lambda" as Publisher
+    queue "EventBridge\n(Custom Bus)" as Bus
+    
+    separator "Async Boundary"
+    
+    collections "SQS: Submitted" as Q_Sub
+    control "Approval Lambda" as ApprovSvc
+    
+    collections "SQS: Approved" as Q_App
+    participant "Spring Boot\n(Fulfillment)" as FulfillSvc
+end box
+
+== Synchronous Ingestion ==
+Client -> ExtAPIGW: POST /api/orders
+ExtAPIGW -> DMZProxy: Invoke
+activate DMZProxy
+    note right: Sanitize headers / Auth Check
+    DMZProxy -> IntAPIGW: POST /internal/events
+    activate IntAPIGW
+        IntAPIGW -> Publisher: Invoke
+        activate Publisher
+            Publisher -> Bus: PutEvents (State: submitted)
+            Bus --> Publisher: EventID
+        Publisher --> IntAPIGW: 202 Accepted
+        deactivate Publisher
+    IntAPIGW --> DMZProxy: 200 OK
+    deactivate IntAPIGW
+DMZProxy --> ExtAPIGW: 200 OK
+deactivate DMZProxy
+ExtAPIGW --> Client: 200 OK (Order Pending)
+
+== Asynchronous Workflow ==
+group State: Submitted
+    Bus -> Q_Sub: Rule: {state: "submitted"}
+    Q_Sub -> ApprovSvc: Poll Message
+    activate ApprovSvc
+    ApprovSvc -> ApprovSvc: Execute Logic\n(Fraud Check, etc.)
+    ApprovSvc -> Bus: PutEvents (State: approved)
+    ApprovSvc -> Q_Sub: Delete Message
+    deactivate ApprovSvc
+end
+
+group State: Approved
+    Bus -> Q_App: Rule: {state: "approved"}
+    Q_App -> FulfillSvc: Poll Message
+    activate FulfillSvc
+    FulfillSvc -> FulfillSvc: Process Fulfillment
+    FulfillSvc -> Q_App: Delete Message
+    deactivate FulfillSvc
+end
+@enduml

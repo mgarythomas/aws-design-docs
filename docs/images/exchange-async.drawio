@@ -1,0 +1,103 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.2 Safari/605.1.15 Ddg/26.2" version="29.3.4">
+  <diagram name="EventBridge Workflow Architecture" id="ZWzPaos9gEewPOEsyShZ">
+    <mxGraphModel dx="1845" dy="663" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#F59E0B;strokeWidth=3;dashed=1;dashPattern=8 4;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;fontSize=14;fontStyle=1;fontColor=#92400E;" value="DMZ VPC (Public Subnet)&lt;br&gt;&lt;span style=&quot;font-size: 10px; font-weight: normal;&quot;&gt;External-facing resources&lt;/span&gt;" vertex="1">
+          <mxGeometry height="320" width="650" x="30" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;strokeWidth=3;dashed=1;dashPattern=8 4;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;fontSize=14;fontStyle=1;fontColor=#1E3A8A;" value="Internal VPC (Private Subnet)&lt;br&gt;&lt;span style=&quot;font-size: 10px; font-weight: normal;&quot;&gt;Internal services and event processing&lt;/span&gt;" vertex="1">
+          <mxGeometry height="520" width="1340" x="30" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-3" parent="1" style="shape=line;strokeWidth=3;strokeColor=#EF4444;fontSize=12;fontStyle=1;fontColor=#EF4444;" value="▼ VPC Peering / PrivateLink ▼" vertex="1">
+          <mxGeometry height="10" width="1400" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0EA5E9;strokeColor=#0284C7;strokeWidth=2;fontSize=12;fontColor=#FFFFFF;fontStyle=1;" value="NextJS App&lt;br&gt;(AWS Amplify)&lt;br&gt;&lt;span style=&quot;font-size: 9px;&quot;&gt;CloudFront CDN&lt;/span&gt;" vertex="1">
+          <mxGeometry height="100" width="140" x="60" y="108" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-5" edge="1" parent="1" source="O9gOoR531YaiSCSyW3Cj-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#475569;fontSize=10;fontColor=#475569;" target="O9gOoR531YaiSCSyW3Cj-6" value="HTTPS">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F97316;strokeColor=#EA580C;strokeWidth=2;fontSize=13;fontColor=#FFFFFF;fontStyle=1;" value="API Gateway&lt;br&gt;(External)&lt;br&gt;&lt;span style=&quot;font-size: 10px;&quot;&gt;/api/orders&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;font-size: 9px;&quot;&gt;Authentication&lt;br&gt;Rate Limiting&lt;/span&gt;" vertex="1">
+          <mxGeometry height="120" width="160" x="300" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DC2626;strokeColor=#B91C1C;strokeWidth=2;fontSize=11;fontColor=#FFFFFF;fontStyle=1;" value="Imperva / F5" vertex="1">
+          <mxGeometry height="35" width="150" x="500" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-8" edge="1" parent="1" source="O9gOoR531YaiSCSyW3Cj-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#475569;fontSize=10;fontColor=#475569;" target="O9gOoR531YaiSCSyW3Cj-9" value="invoke">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8B5CF6;strokeColor=#7C3AED;strokeWidth=2;fontSize=12;fontColor=#FFFFFF;fontStyle=1;" value="Lambda Proxy&lt;br&gt;&lt;span style=&quot;font-size: 9px;&quot;&gt;(External Gateway)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="50" width="160" x="300" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-10" edge="1" parent="1" source="O9gOoR531YaiSCSyW3Cj-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#475569;fontSize=10;fontColor=#475569;fontStyle=1;" target="O9gOoR531YaiSCSyW3Cj-12" value="VPC Peering&lt;br&gt;or PrivateLink">
+          <mxGeometry relative="1" x="-0.2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBBF24;strokeColor=#F59E0B;strokeWidth=2;fontSize=9;fontColor=#78350F;fontStyle=1;" value="Private" vertex="1">
+          <mxGeometry height="30" width="60" x="350" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F97316;strokeColor=#EA580C;strokeWidth=2;fontSize=13;fontColor=#FFFFFF;fontStyle=1;" value="API Gateway&lt;br&gt;(Internal)&lt;br&gt;&lt;span style=&quot;font-size: 10px;&quot;&gt;/internal/events&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;font-size: 9px;&quot;&gt;VPC Endpoint&lt;br&gt;Private Access Only&lt;/span&gt;" vertex="1">
+          <mxGeometry height="120" width="160" x="300" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-13" edge="1" parent="1" source="O9gOoR531YaiSCSyW3Cj-12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#475569;fontSize=10;fontColor=#475569;" target="O9gOoR531YaiSCSyW3Cj-14" value="invoke">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-14" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8B5CF6;strokeColor=#7C3AED;strokeWidth=2;fontSize=12;fontColor=#FFFFFF;fontStyle=1;" value="Lambda&lt;br&gt;State Publisher&lt;br&gt;&lt;span style=&quot;font-size: 10px;&quot;&gt;(TypeScript)&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;font-size: 8px;&quot;&gt;Private Subnet&lt;/span&gt;" vertex="1">
+          <mxGeometry height="100" width="160" x="560" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-15" edge="1" parent="1" source="O9gOoR531YaiSCSyW3Cj-14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#475569;fontSize=10;fontColor=#475569;" target="O9gOoR531YaiSCSyW3Cj-16" value="PutEvents">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-16" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EC4899;strokeColor=#DB2777;strokeWidth=2;fontSize=14;fontColor=#FFFFFF;fontStyle=1;verticalAlign=top;spacingTop=10;" value="EventBridge&lt;br&gt;workflow-event-bus" vertex="1">
+          <mxGeometry height="120" width="260" x="510" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-17" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;fillOpacity=30;strokeColor=none;fontSize=9;fontColor=#FFFFFF;" value="Rule: submitted&lt;br&gt;&lt;span style=&quot;font-size: 8px;&quot;&gt;state filter&lt;/span&gt;" vertex="1">
+          <mxGeometry height="35" width="100" x="530" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-18" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;fillOpacity=30;strokeColor=none;fontSize=9;fontColor=#FFFFFF;" value="Rule: approved&lt;br&gt;&lt;span style=&quot;font-size: 8px;&quot;&gt;state filter&lt;/span&gt;" vertex="1">
+          <mxGeometry height="35" width="100" x="650" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-19" edge="1" parent="1" source="O9gOoR531YaiSCSyW3Cj-16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#475569;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" target="O9gOoR531YaiSCSyW3Cj-22" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-20" edge="1" parent="1" source="O9gOoR531YaiSCSyW3Cj-16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#475569;exitX=0.75;exitY=1;exitDx=0;exitDy=0;" target="O9gOoR531YaiSCSyW3Cj-23" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-21" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#93C5FD;fillOpacity=30;strokeColor=#3B82F6;strokeWidth=1;dashed=1;dashPattern=4 2;fontSize=11;fontColor=#1E40AF;fontStyle=1;align=left;spacingLeft=10;" value="Private Subnet - Event Consumers" vertex="1">
+          <mxGeometry height="30" width="1290" x="60" y="785" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-22" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#10B981;strokeColor=#059669;strokeWidth=2;fontSize=12;fontColor=#FFFFFF;fontStyle=1;" value="SQS Queue&lt;br&gt;order-submitted&lt;br&gt;&lt;span style=&quot;font-size: 9px;&quot;&gt;+ DLQ&lt;/span&gt;" vertex="1">
+          <mxGeometry height="90" width="180" x="200" y="830" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-23" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#10B981;strokeColor=#059669;strokeWidth=2;fontSize=12;fontColor=#FFFFFF;fontStyle=1;" value="SQS Queue&lt;br&gt;order-approved&lt;br&gt;&lt;span style=&quot;font-size: 9px;&quot;&gt;+ DLQ&lt;/span&gt;" vertex="1">
+          <mxGeometry height="90" width="180" x="960" y="830" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-24" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8B5CF6;strokeColor=#7C3AED;strokeWidth=2;fontSize=12;fontColor=#FFFFFF;fontStyle=1;" value="Lambda&lt;br&gt;Approval&lt;br&gt;&lt;span style=&quot;font-size: 9px;&quot;&gt;Processor&lt;/span&gt;" vertex="1">
+          <mxGeometry height="80" width="140" x="810" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-25" edge="1" parent="1" source="O9gOoR531YaiSCSyW3Cj-24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#475569;dashed=1;dashPattern=5 3;fontSize=9;fontColor=#475569;" target="O9gOoR531YaiSCSyW3Cj-22" value="trigger">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="880" y="780" />
+              <mxPoint x="290" y="780" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-26" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#06B6D4;strokeColor=#0891B2;strokeWidth=2;fontSize=12;fontColor=#FFFFFF;fontStyle=1;" value="Spring Boot&lt;br&gt;Fulfillment&lt;br&gt;&lt;span style=&quot;font-size: 9px;&quot;&gt;(EKS Pod)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="80" width="160" x="1180" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="O9gOoR531YaiSCSyW3Cj-27" edge="1" parent="1" source="O9gOoR531YaiSCSyW3Cj-26" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#475569;dashed=1;dashPattern=5 3;fontSize=9;fontColor=#475569;" target="O9gOoR531YaiSCSyW3Cj-23" value="poll">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1260" y="780" />
+              <mxPoint x="1050" y="780" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

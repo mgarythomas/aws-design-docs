@@ -1,0 +1,121 @@
+graph TB
+    subgraph "Entry Points"
+        ExtAPI[External API Gateway]
+        IntAPI[Internal API Gateway]
+    end
+
+    subgraph "Validation Layer"
+        ValLambda[Validation Lambda<br/>TypeScript]
+    end
+
+    subgraph "Event Bus"
+        EB[AWS EventBridge<br/>Central Event Bus]
+    end
+
+    subgraph "Orchestration Layer - EKS"
+        Orch[Spring Boot Orchestrator<br/>EKS Pods]
+        JMSBridge[JMS Bridge Service<br/>EKS Pods]
+    end
+
+    subgraph "Integration Adapters - Lambda"
+        SFAdapter[Salesforce Adapter<br/>TypeScript Lambda]
+        SOAPAdapter[SOAP/XML Adapter<br/>TypeScript Lambda]
+        APIAdapter[Internal API Adapter<br/>TypeScript Lambda]
+    end
+
+    subgraph "Data Persistence"
+        RDS[(PostgreSQL RDS<br/>Multi-AZ)]
+    end
+
+    subgraph "Message Queuing"
+        SQS_SF[SQS: Salesforce Retry]
+        SQS_SOAP[SQS: SOAP Retry]
+        SQS_JMS[SQS FIFO: JMS Queue]
+        DLQ[Dead Letter Queues]
+    end
+
+    subgraph "Background Workers"
+        OutboxProc[Outbox Processor<br/>Lambda - Scheduled]
+        RetryProc[Retry Processor<br/>Lambda - SQS Trigger]
+    end
+
+    subgraph "External Systems"
+        SF[Salesforce SaaS]
+        TIBCO[TIBCO JMS]
+        SOAP[SOAP/XML Services]
+        InternalSvc[Internal Services]
+        Vault[HashiCorp Vault]
+    end
+
+    subgraph "Monitoring"
+        CW[CloudWatch Logs<br/>& Metrics]
+        XRay[X-Ray Tracing]
+    end
+
+    %% Entry flow
+    ExtAPI --> ValLambda
+    IntAPI --> ValLambda
+    ValLambda --> RDS
+    ValLambda --> EB
+
+    %% EventBridge routing
+    EB --> Orch
+    EB --> SFAdapter
+    EB --> SOAPAdapter
+    EB --> APIAdapter
+    EB --> JMSBridge
+
+    %% Orchestrator interactions
+    Orch <--> RDS
+    Orch --> EB
+
+    %% Adapter interactions
+    SFAdapter <--> RDS
+    SFAdapter --> SF
+    SFAdapter --> SQS_SF
+    SFAdapter --> RDS
+
+    SOAPAdapter <--> RDS
+    SOAPAdapter --> SOAP
+    SOAPAdapter --> SQS_SOAP
+
+    APIAdapter <--> RDS
+    APIAdapter --> InternalSvc
+
+    JMSBridge <--> RDS
+    JMSBridge --> SQS_JMS
+    JMSBridge --> TIBCO
+
+    %% Retry flows
+    SQS_SF --> RetryProc
+    SQS_SOAP --> RetryProc
+    SQS_JMS --> JMSBridge
+    RetryProc --> EB
+
+    %% Failed messages
+    SQS_SF -.-> DLQ
+    SQS_SOAP -.-> DLQ
+    SQS_JMS -.-> DLQ
+
+    %% Outbox pattern
+    RDS --> OutboxProc
+    OutboxProc --> EB
+
+    %% Monitoring
+    ValLambda --> CW
+    SFAdapter --> CW
+    SOAPAdapter --> CW
+    Orch --> CW
+    JMSBridge --> CW
+    
+    ValLambda --> XRay
+    SFAdapter --> XRay
+    SOAPAdapter --> XRay
+
+    style RDS fill:#326CE5,stroke:#fff,stroke-width:2px,color:#fff
+    style EB fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff
+    style Orch fill:#6DB33F,stroke:#fff,stroke-width:2px,color:#fff
+    style JMSBridge fill:#6DB33F,stroke:#fff,stroke-width:2px,color:#fff
+    style SFAdapter fill:#00A4EF,stroke:#fff,stroke-width:2px,color:#fff
+    style SOAPAdapter fill:#00A4EF,stroke:#fff,stroke-width:2px,color:#fff
+    style APIAdapter fill:#00A4EF,stroke:#fff,stroke-width:2px,color:#fff

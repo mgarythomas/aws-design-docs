@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Financial Reporting (XBRL/iXBRL) Payload",
+  "description": "Defines the structure for a submission containing a financial report in XBRL or iXBRL format.",
+  "type": "object",
+  "properties": {
+    "report": {
+      "description": "The base64 encoded XBRL or iXBRL document.",
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "reportingStandard": {
+      "description": "The financial reporting standard used (e.g., IFRS, GAAP).",
+      "type": "string",
+      "enum": ["IFRS", "GAAP", "Other"]
+    },
+    "periodEndDate": {
+      "description": "The end date of the reporting period.",
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "required": ["report", "reportingStandard", "periodEndDate"]
+}
