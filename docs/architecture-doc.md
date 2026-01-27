@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-This architecture specification outlines the design for a new Cloud Native Digital Platform enabling listed companies to submit regulatory disclosures and announcements to the exchange. The platform is designed to provide a secure, scalable, and resilient ingestion channel that ensures Zero Data Loss (RPO=0) and strict compliance with regulatory standards through a segmented network topology.
+This architecture specification outlines the design for a new Cloud Native Digital Platform enabling listed companies to submit regulatory submissions and announcements to the exchange. The platform is designed to provide a secure, scalable, and resilient ingestion channel that ensures Zero Data Loss (RPO=0) and strict compliance with regulatory standards through a segmented network topology.
 
 ## 2. Background
 
@@ -41,7 +41,7 @@ The proposed architecture aligns with the exchange's broader strategic goals:
 The system is decomposed into the following Bounded Contexts:
 
 ### 5.1 Submission Context
-*   **Responsibility**: Handling the ingestion, validation, and persistence of disclosure documents.
+*   **Responsibility**: Handling the ingestion, validation, and persistence of submission documents.
 *   **Aggregates**: `Submission`, `Document`, `ValidationRule`.
 
 ### 5.2 Regulatory Context
@@ -62,7 +62,7 @@ The system is decomposed into the following Bounded Contexts:
 
 | Capability Group | Business Capability | Description |
 | :--- | :--- | :--- |
-| **Submission Management** | Submit Disclosure | Secure upload of regulatory documents. |
+| **Submission Management** | Submit submission | Secure upload of regulatory documents. |
 | | Validate Submission | Real-time checks against regulatory business rules. |
 | | Track Status | Visibility into the processing lifecycle of a submission. |
 | **Compliance** | Audit Logging | Immutable recording of all user actions and system events. |
@@ -115,15 +115,15 @@ The high-level interactions between external actors and the Digital Platform.
 C4Context
     title System Context Diagram for Cloud Native Digital Platform
 
-    Person(issuer, "Issuer", "Employee of listed company submitting disclosures")
+    Person(issuer, "Issuer", "Employee of listed company submitting submissions")
     Person(admin, "Exchange Staff", "Internal staff reviewing submissions")
     
-    System(platform, "Digital Platform", "Allows submission, validation, and tracking of disclosures")
+    System(platform, "Digital Platform", "Allows submission, validation, and tracking of submissions")
     
     System_Ext(legacy, "Legacy Submission System", "On-Premise system for final processing")
     System_Ext(idp, "Identity Provider", "SSO/MFA provider")
     
-    Rel(issuer, platform, "Submits disclosures", "HTTPS")
+    Rel(issuer, platform, "Submits submissions", "HTTPS")
     Rel(admin, platform, "Reviews status", "HTTPS")
     Rel(platform, legacy, "Forwards validated submissions", "VPN/Direct Connect")
     Rel(platform, idp, "Authenticates users", "OIDC/SAML")
@@ -157,10 +157,10 @@ C4Container
         Container_Boundary(core, "Submission Domain") {
              Container(svc_submission, "Submission Service", "Lambda", "Drafts/Submit")
              Container(svc_val_engine, "Validation Engine", "Lambda", "Rule Execution")
-             Container(svc_disc_orch, "Disclosure Orch.", "EKS", "Workflow Routing")
-             Container(svc_disc_val, "Disclosure Validation", "Lambda", "Rules Engine")
+             Container(svc_disc_orch, "submission Orch.", "EKS", "Workflow Routing")
+             Container(svc_disc_val, "submission Validation", "Lambda", "Rules Engine")
              Container(svc_approval, "Approval Service", "Lambda", "Audit Decisions")
-             Container(svc_disclosure, "Disclosure Service", "Lambda", "Historical Retrieval")
+             Container(svc_submission, "submission Service", "Lambda", "Historical Retrieval")
              Container(svc_waiver, "Waiver Registry", "Lambda", "Waiver Mgmt")
         }
 
@@ -220,14 +220,14 @@ The following services and operations have been identified as part of the core p
 | **Forms Program Service** | • Manage forms by code, rule number, category, date<br>• Add validation rules |
 | **Knowledge Service** | • Manage system knowledge base<br>• Search/Retrieve knowledge base<br>• Manage webinars/videos<br>• Manage banners |
 | **ASX Directory Service** | • Retrieve ASX Directory Contact details<br>• Retrieve assigned listing adviser details<br>• Retrieve assigned MAG contact details |
-| **Disclosure Orchestration Management** | • Routing of disclosure notification<br>• Routing of disclosure workflow<br>• Retrieve/Update disclosure status<br>• Reject disclosure |
-| **Disclosure Validation Service** | • Validate announcement & market sensitivity<br>• Scored price sensitivity<br>• Verify disclosures are correct<br>• Suggest disclosure type based on content<br>• Validate dependencies |
+| **submission Orchestration Management** | • Routing of submission notification<br>• Routing of submission workflow<br>• Retrieve/Update submission status<br>• Reject submission |
+| **submission Validation Service** | • Validate announcement & market sensitivity<br>• Scored price sensitivity<br>• Verify submissions are correct<br>• Suggest submission type based on content<br>• Validate dependencies |
 | **Approval Service** | • Determine if adviser approval is required<br>• Capture approval decision and audit trail |
-| **Submission Service** | • Validate sequencing of submission<br>• Preview before submission<br>• Save/Withdraw draft<br>• Submit disclosure |
+| **Submission Service** | • Validate sequencing of submission<br>• Preview before submission<br>• Save/Withdraw draft<br>• Submit submission |
 | **Submission Validation Engine** | • Execute config-driven validation rules<br>• Load rules from Forms Program Service |
 | Waiver Registry Service | • Waiver Search (by rulebook, rule number, company or date)<br>• Retrieve Waiver (by rulebook, rule number, company or date) |
-| **Disclosure Service** | • Retrieve Historical Disclosures |
-| **Data Archive Service** | • Archive historical disclosures |
+| **submission Service** | • Retrieve Historical submissions |
+| **Data Archive Service** | • Archive historical submissions |
 
 ### 8.4 API Chaining & Authorisation Flow
 

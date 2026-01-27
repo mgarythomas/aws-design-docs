@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-This document defines the standardised data model for all submissions to the exchange's digital platform. The model adopts a **Generic Submission Envelope** pattern to handle various submission types (e.g., Disclosures, Waivers, Financial Reports), ensuring consistency and extensibility.
+This document defines the standardised data model for all submissions to the exchange's digital platform. The model adopts a **Generic Submission Envelope** pattern to handle various submission types (e.g., submissions, Waivers, Financial Reports), ensuring consistency and extensibility.
 
 The platform supports multiple data formats, including:
 - **ISO 20022**: For standard financial messaging, such as Corporate Actions (`seev.031`).

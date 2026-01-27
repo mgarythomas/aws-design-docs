@@ -46,19 +46,19 @@ Events triggering downstream processing of market data.
 | `exchange.corp_action.cancelled` | Cancellation of an announcement. | `offclCorpActnEvtId`, `reason` |
 | `exchange.corp_action.distribution_executed` | Cash or securities delivered to shareholders. | `offclCorpActnEvtId`, `payoutDetails` |
 
-### 3.3 Disclosure Lifecycle Domain (`/domain/disclosure`)
-Business lifecycle of a disclosure/announcement document.
+### 3.3 Submission Lifecycle Domain (`/domain/submission`)
+Business lifecycle of a submission document.
 
 | Event Type | Description | Key Payload Fields |
 | :--- | :--- | :--- |
-| `exchange.disclosure.material_event_identified` | Issuer identifies MNPI (Price Sensitive Info). | `issuerId`, `description` |
-| `exchange.disclosure.draft_created` | Initial draft of disclosure started. | `disclosureId` |
-| `exchange.disclosure.review_requested` | Draft sent for internal review. | `disclosureId`, `reviewers` |
-| `exchange.disclosure.approved` | Final executive or legal sign-off received. | `disclosureId`, `approver` |
-| `exchange.disclosure.trading_halt_requested` | Issuer requests halt pending announcement. | `issuerId`, `reason` |
-| `exchange.disclosure.trading_halt_confirmed` | Exchange operations confirms halt. | `haltId`, `status` |
-| `exchange.disclosure.market_sensitive_released` | Public release of price-sensitive info. | `disclosureId`, `releaseTime` |
-| `exchange.disclosure.embargo_lifted` | Embargo period has ended, info is public. | `disclosureId` |
+| `exchange.submission.material_event_identified` | Issuer identifies MNPI (Price Sensitive Info). | `issuerId`, `description` |
+| `exchange.submission.draft_created` | Initial draft of submission started. | `submissionId` |
+| `exchange.submission.review_requested` | Draft sent for internal review. | `submissionId`, `reviewers` |
+| `exchange.submission.approved` | Final executive or legal sign-off received. | `submissionId`, `approver` |
+| `exchange.submission.trading_halt_requested` | Issuer requests halt pending announcement. | `issuerId`, `reason` |
+| `exchange.submission.trading_halt_confirmed` | Exchange operations confirms halt. | `haltId`, `status` |
+| `exchange.submission.market_sensitive_released` | Public release of price-sensitive info. | `submissionId`, `releaseTime` |
+| `exchange.submission.embargo_lifted` | Embargo period has ended, info is public. | `submissionId` |
 
 ### 3.4 Regulatory Reporting Domain (`/domain/reporting`)
 Periodic financial reporting and structured data.
