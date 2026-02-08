@@ -1,0 +1,99 @@
+
+> web-ui@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.0.2:3000
+
+✓ Starting...
+✓ Ready in 1212ms
+○ Compiling /corporate-action ...
+ GET /corporate-action 200 in 6.3s (compile: 5.7s, render: 585ms)
+ GET /corporate-action 200 in 104ms (compile: 7ms, render: 97ms)
+ GET /corporate-action 200 in 244ms (compile: 69ms, render: 176ms)
+API Route: Received submission
+DMZ Service: Received submission
+DMZ Service: Validation failed Error [ZodError]: [
+  {
+    "expected": "number",
+    "code": "invalid_type",
+    "received": "NaN",
+    "path": [
+      "corporateActionDetails",
+      "rateAndPrice",
+      "grossDividendRate",
+      "amount"
+    ],
+    "message": "Invalid input: expected number, received NaN"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "corporateActionDetails",
+      "rateAndPrice",
+      "grossDividendRate",
+      "currency"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  }
+]
+    at dmzHandler (src/services-backend/dmz/index.ts:8:40)
+    at POST (src/app/api/submit/route.ts:10:36)
+   6 |
+   7 |   // Validate schema
+>  8 |   const result = corporateActionSchema.safeParse(event);
+     |                                        ^
+   9 |
+  10 |   if (!result.success) {
+  11 |     console.error("DMZ Service: Validation failed", result.error);
+ POST /api/submit 400 in 585ms (compile: 167ms, render: 418ms)
+ GET /corporate-action 200 in 87ms (compile: 10ms, render: 76ms)
+API Route: Received submission
+DMZ Service: Received submission
+DMZ Service: Validation successful. Forwarding to Internal Service...
+Internal Service: Received data {
+  "corporateActionGeneralInformation": {
+    "officialCorporateActionEventID": "CA-VERIFY-001",
+    "eventType": "DVCA",
+    "mandatoryVoluntaryEventType": "MAND"
+  },
+  "underlyingSecurity": {
+    "isin": "US1234567890",
+    "ticker": ""
+  },
+  "corporateActionDetails": {
+    "dates": {
+      "announcementDate": "2023-10-01",
+      "exDate": "",
+      "recordDate": "2023-10-15",
+      "paymentDate": "2023-10-30"
+    },
+    "rateAndPrice": {
+      "grossDividendRate": {
+        "amount": null
+      }
+    }
+  },
+  "options": [
+    {
+      "optionNumber": "001",
+      "optionType": "CASH",
+      "defaultOption": false
+    }
+  ]
+}
+Internal Service: Saved to database (simulated)
+Current DB count: 1
+ POST /api/submit 200 in 92ms (compile: 76ms, render: 16ms)
+Error: Turbopack build failed with 1 errors:
+./src/app
+Error: Next.js inferred your workspace root, but it may not be correct.
+    We couldn't find the Next.js package (next/package.json) from the project directory: /app/web-ui/src/app
+     To fix this, set turbopack.root in your Next.js config, or ensure the Next.js package is resolvable from this directory.
+    Note: For security and performance reasons, files outside of the project directory will not be compiled.
+    See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+
+    at ignore-listed frames
+[?25h
