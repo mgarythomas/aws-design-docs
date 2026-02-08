@@ -1,5 +1,6 @@
+
 import { corporateActionSchema } from "../shared/schema";
-import { internalHandler } from "../internal/index";
+import { publishEvent } from "../event-bus/index";
 
 export const dmzHandler = async (event: any) => {
   console.log("DMZ Service: Received submission");
@@ -15,11 +16,22 @@ export const dmzHandler = async (event: any) => {
     };
   }
 
-  console.log("DMZ Service: Validation successful. Forwarding to Internal Service...");
+  console.log("DMZ Service: Validation successful. Publishing event to Internal Service...");
 
-  // Forward to Internal Service
-  // In a real scenario, this would be an API call via Internal API Gateway
-  const response = await internalHandler(result.data);
+  // Publish Event for Async Processing (Simulates SQS/EventBridge)
+  const eventResult = await publishEvent(
+    "com.mycorp.corporate-actions.dmz",
+    "CorporateActionSubmission",
+    result.data
+  );
 
-  return response;
+  console.log(`DMZ Service: Event published successfully. ID: ${eventResult.eventId}`);
+
+  return {
+    statusCode: 202, // Accepted
+    body: JSON.stringify({
+      message: "Submission received and queued for processing.",
+      eventId: eventResult.eventId
+    }),
+  };
 };

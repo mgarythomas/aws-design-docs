@@ -1,29 +1,51 @@
+
 import { CorporateActionSchema } from "../shared/schema";
+import { encrypt } from "../lib/encryption";
 
-// Mock database
-const db: CorporateActionSchema[] = [];
+// Mock database (in-memory for simulation ONLY)
+// In a real AWS Lambda environment, this global variable would not persist across invocations.
+// For production, this MUST be replaced by a connection to Aurora/RDS Postgres.
+const db: { id: string, encryptedData: string }[] = [];
 
+/**
+ * Internal Service Handler
+ * This function is triggered by an event (e.g., from SQS/EventBridge via Lambda).
+ * It processes the corporate action submission asynchronously.
+ */
 export const internalHandler = async (data: CorporateActionSchema) => {
-  console.log("Internal Service: Received data", JSON.stringify(data, null, 2));
+  console.log("Internal Service: Processing event...", JSON.stringify(data, null, 2));
 
-  // Business Logic: Check for duplicates, etc.
-  const exists = db.find(item => item.corporateActionGeneralInformation.officialCorporateActionEventID === data.corporateActionGeneralInformation.officialCorporateActionEventID);
+  // Business Logic: Check for duplicates
+  // Note: To check for duplicates in a real encrypted DB, we might store a hash of the unique ID separately.
+  const idToCheck = data.corporateActionGeneralInformation.officialCorporateActionEventID;
+  const exists = db.find(item => item.id === idToCheck);
 
   if (exists) {
-      console.warn("Internal Service: Duplicate submission detected");
-      return {
-          statusCode: 409, // Conflict
-          body: JSON.stringify({ message: "Duplicate submission: Official Corporate Action Event ID already exists." })
-      }
+      console.warn(`Internal Service: Duplicate submission detected for ID: ${idToCheck}`);
+      return { status: "Conflict", message: "Duplicate ID" };
   }
 
-  // Simulate DB save
-  db.push(data);
-  console.log("Internal Service: Saved to database (simulated)");
-  console.log("Current DB count:", db.length);
+  // Encrypt the payload before storing
+  let encryptedPayload = "";
+  try {
+      const payloadString = JSON.stringify(data);
+      encryptedPayload = encrypt(payloadString);
+  } catch (error) {
+      console.error("Internal Service: Encryption failed. Check ENCRYPTION_KEY env var.", error);
+      throw error;
+  }
 
-  return {
-    statusCode: 200,
-    body: JSON.stringify({ message: "Submission accepted and processed successfully", id: data.corporateActionGeneralInformation.officialCorporateActionEventID }),
-  };
+  // Simulate DB save (latency)
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  db.push({
+      id: idToCheck,
+      encryptedData: encryptedPayload
+  });
+
+  console.log(`Internal Service: Successfully saved ENCRYPTED Corporate Action ${idToCheck}`);
+  console.log("Internal Service: Current DB count (Simulated):", db.length);
+  console.log("Internal Service: Last encrypted entry (Simulated):", encryptedPayload.substring(0, 50) + "...");
+
+  return { status: "Success", id: idToCheck };
 };

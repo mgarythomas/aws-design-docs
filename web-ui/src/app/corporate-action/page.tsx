@@ -48,8 +48,14 @@ export default function CorporateActionPage() {
     setServerMessage("");
     try {
       const response = await axios.post("/api/submit", data);
-      setSubmissionStatus("success");
-      setServerMessage(response.data.message || "Submission successful");
+
+      if (response.status === 202) {
+          setSubmissionStatus("success");
+          setServerMessage(`Submission received. Your request is being processed. Reference ID: ${response.data.eventId}`);
+      } else {
+          setSubmissionStatus("success");
+          setServerMessage(response.data.message || "Submission successful");
+      }
     } catch (error: any) {
       setSubmissionStatus("error");
       setServerMessage(error.response?.data?.message || error.message || "An error occurred");
