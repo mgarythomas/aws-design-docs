@@ -10,28 +10,32 @@ The architecture follows a strict separation of concerns:
 - **Web UI:** A Next.js application (Server-Side Rendering) deployed on AWS (e.g., Amplify or ECS Fargate).
 - **DMZ VPC:** Contains the Public API Gateway and stateless "DMZ Lambda" functions. These services perform initial validation and schema checks but do not access the database directly.
 - **Async Event Bus:** An EventBridge or SQS queue decouples the ingestion from processing.
-- **Internal VPC:** Contains the "Internal Lambda" functions and the RDS Aurora database. These services handle business logic, encryption, and persistence.
+- **Internal VPC:** Contains the "Internal Lambda" functions, a dedicated "Encryption Service", and the RDS Aurora database. These services handle business logic, encryption, and persistence.
 
 ### Architecture Diagram
 
+![Architecture Diagram](docs/images/architecture-diagram.png)
+
+
 ```mermaid
-graph TD
-    subgraph "Web Application"
+flowchart TD
+    subgraph Web_Application ["Web Application"]
         UI[Next.js Frontend]
     end
 
-    subgraph "AWS Cloud"
-        subgraph "DMZ VPC"
-            APIG[API Gateway (Public)]
+    subgraph AWS_Cloud ["AWS Cloud"]
+        subgraph DMZ_VPC ["DMZ VPC"]
+            APIG[API Gateway Public]
             DMZ_Lambda[DMZ Service Lambda]
         end
 
-        subgraph "Async Layer"
+        subgraph Async_Layer ["Async Layer"]
             EB[EventBridge / SQS Queue]
         end
 
-        subgraph "Internal VPC"
+        subgraph Internal_VPC ["Internal VPC"]
             Internal_Lambda[Internal Service Lambda]
+            Encryption_Service[Encryption Service]
             DB[(Aurora PostgreSQL)]
         end
     end
@@ -40,7 +44,9 @@ graph TD
     APIG -->|Invoke| DMZ_Lambda
     DMZ_Lambda -->|Validate & Publish| EB
     EB -->|Trigger| Internal_Lambda
-    Internal_Lambda -->|Encrypt & Store| DB
+    Internal_Lambda -->|Request Encrypt| Encryption_Service
+    Encryption_Service -->|Return Encrypted Data| Internal_Lambda
+    Internal_Lambda -->|Store| DB
 ```
 
 ## 3. Data Flow & Sequence
@@ -58,8 +64,8 @@ graph TD
 
 1.  The Internal Service is triggered by the event from the Event Bus.
 2.  The service performs duplicate checks (idempotency) using the Official Event ID.
-3.  The service encrypts the sensitive payload using AES-256-CBC.
-4.  The encrypted payload is stored in the Aurora PostgreSQL database.
+3.  The service calls the Encryption Service to encrypt the sensitive payload (AES-256-CBC).
+4.  The encrypted payload is returned to the Internal Service and then stored in the Aurora PostgreSQL database.
 
 ### Sequence Diagram: Submission
 
@@ -70,6 +76,7 @@ sequenceDiagram
     participant DMZ as DMZ Service (Lambda)
     participant EB as EventBridge/SQS
     participant Internal as Internal Service (Lambda)
+    participant Encryption as Encryption Service
     participant DB as Aurora DB
 
     User->>UI: Fills Form & Submits
@@ -89,7 +96,8 @@ sequenceDiagram
     activate Internal
     EB->>Internal: Consume Event
     Internal->>Internal: Check Duplicates (Idempotency)
-    Internal->>Internal: Encrypt Payload (AES-256)
+    Internal->>Encryption: Encrypt Payload
+    Encryption-->>Internal: Encrypted Payload
     Internal->>DB: INSERT INTO submissions (id, encrypted_data)
     deactivate Internal
 ```
@@ -99,7 +107,7 @@ sequenceDiagram
 Once a submission is stored, it enters an approval workflow. This process is also asynchronous.
 
 1.  An internal operator or system triggers an approval check (e.g., via another UI or API).
-2.  The Internal Service retrieves the record from the DB and decrypts it.
+2.  The Internal Service calls the Encryption Service to decrypt the record retrieved from the DB.
 3.  If approved, a `CorporateActionApproved` event is published.
 4.  Downstream systems (e.g., Settlement, Notification) subscribe to this event.
 
@@ -109,6 +117,7 @@ Once a submission is stored, it enters an approval workflow. This process is als
 sequenceDiagram
     participant Operator as Internal Operator
     participant Internal as Internal Service
+    participant Encryption as Encryption Service
     participant DB as Aurora DB
     participant EB as EventBridge
 
@@ -116,7 +125,8 @@ sequenceDiagram
     activate Internal
     Internal->>DB: SELECT * FROM submissions WHERE id={id}
     DB-->>Internal: Returns Encrypted Record
-    Internal->>Internal: Decrypt Payload
+    Internal->>Encryption: Decrypt Payload
+    Encryption-->>Internal: Decrypted Payload
     Internal->>Internal: Validate Business Rules
 
     alt Approved
@@ -133,7 +143,7 @@ sequenceDiagram
 ## 5. Security Strategy
 
 -   **Transport Security:** All communication between the UI and API Gateway is over HTTPS (TLS 1.2+).
--   **Data at Rest:** Sensitive corporate action details are encrypted at the application level using AES-256-CBC before being persisted to the database. The `ENCRYPTION_KEY` is managed via AWS Secrets Manager and injected as an environment variable `ENCRYPTION_KEY`.
+-   **Data at Rest:** Sensitive corporate action details are encrypted via a dedicated **Encryption Service** using AES-256-CBC before being persisted to the database. The `ENCRYPTION_KEY` is managed via AWS Secrets Manager and accessible only to this service.
 -   **Network Security:**
     -   **DMZ VPC:** Only exposes the API Gateway and stateless validation logic. No direct database access.
     -   **Internal VPC:** Not directly accessible from the public internet. Access is restricted to internal services and the VPN.
