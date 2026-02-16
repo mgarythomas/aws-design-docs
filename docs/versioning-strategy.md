@@ -35,3 +35,42 @@ If a set of UI components (e.g., a Design System library) is published to an int
 -   **MAJOR**: Breaking changes.
 -   **MINOR**: New features (backwards compatible).
 -   **PATCH**: Bug fixes.
+    
+## Deployment & Routing Integration
+
+This section defines how the **Service Version** links to the **Runtime Environment**, enabling traffic routing from the API Gateway to the correct backend artifact.
+
+### Lambda (Serverless)
+
+We utilize **Lambda Aliases** to decouple the immutable function version from the mutable environment pointer.
+
+1.  **Publish**: When a deployment pipeline runs, it publishes a new **Version** of the Lambda function (e.g., `v13`).
+2.  **Alias Update**: The pipeline then updates a specific **Alias** (e.g., `live`) to point to this new version.
+3.  **Routing**: API Gateway routes traffic to the alias, not the specific version number.
+
+**API Gateway Integration**:
+*   The API Gateway integration URI uses a **Stage Variable**:
+    `arn:aws:apigateway:region:lambda:path/functions/arn:aws:lambda:region:account:function:my-function:${stageVariables.lambdaAlias}/invocations`
+*   **Deployment**: To promote a build from QA to PROD, we update the `lambdaAlias` stage variable in API Gateway, or update the `live` alias on the Lambda function itself (preferred for simplicity).
+
+### EKS (Containers)
+
+For Kubernetes workloads, we use **image tags** and **Service selectors**.
+
+1.  **Image Build**: The CI process builds a Docker image tagged with the version (e.g., `my-app:v2024.1.105-a1b2c3d`).
+2.  **Manifest Update**: The CD process updates the Kubernetes Deployment manifest to use this specific image tag.
+3.  **Routing**:
+    *   **Ingress Controller**: An AWS Load Balancer Controller manages an ALB that routes traffic to the EKS Service.
+    *   **In-Cluster**: The Service object selects pods based on labels (e.g., `app=my-app`).
+    *   **Zero-Downtime**: Kubernetes performs a **Rolling Update**, ensuring new pods (with the new image) are healthy before terminating old ones.
+
+### API Gateway Routing Strategy
+
+To support multiple concurrent versions (if required) or canary releases, we use a combination of **Path-based** and **Header-based** routing.
+
+*   **Path-based (Major Versions)**: Used for breaking changes.
+    *   `/v1/submit` -> Routes to `Service-v1`
+    *   `/v2/submit` -> Routes to `Service-v2`
+*   **Header-based (Canary/Testing)**: Used for verified rollouts.
+    *   Default -> Routes to `stable` alias.
+    *   Header `x-channel: beta` -> Routes to `beta` alias (via Stage Variables).
