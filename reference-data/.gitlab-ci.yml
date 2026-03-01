@@ -1,0 +1,59 @@
+stages:
+  - lint
+  - deploy
+
+variables:
+  # Define your AWS Region and API Gateway ID here via GitLab CI/CD Settings
+  AWS_DEFAULT_REGION: ap-southeast-2
+  # For security, use OIDC roles rather than hardcoding access keys
+  ROLE_ARN: arn:aws:iam::123456789012:role/GitLabApiGatewayDeployRole
+  API_ID: $AWS_API_GATEWAY_ID # Set this in GitLab CI/CD Variables
+
+# ==========================================
+# STAGE: LINT
+# ==========================================
+lint_openapi:
+  stage: lint
+  image: node:18-alpine
+  script:
+    - echo "Installing Spectral..."
+    - npm install -g @stoplight/spectral-cli
+    - echo "Linting OpenAPI Specification..."
+    - spectral lint openapi.yaml --ruleset https://raw.githubusercontent.com/stoplightio/spectral/master/docs/reference/openapi-ruleset.yaml
+  allow_failure: false # Stop the pipeline if the schema is invalid
+
+# ==========================================
+# STAGE: DEPLOY TO AWS API GATEWAY
+# ==========================================
+deploy_to_aws:
+  stage: deploy
+  image: amazon/aws-cli:latest
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: sts.amazonaws.com
+  before_script:
+    - echo "Assuming AWS Role via OIDC..."
+    - >
+      export $(printf "AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s"
+      $(aws sts assume-role-with-web-identity
+      --role-arn ${ROLE_ARN}
+      --role-session-name "GitLabRunner-${CI_PROJECT_ID}-${CI_PIPELINE_ID}"
+      --web-identity-token ${GITLAB_OIDC_TOKEN}
+      --duration-seconds 3600
+      --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]'
+      --output text))
+  script:
+    - echo "Deploying OpenAPI spec to AWS API Gateway..."
+    # 'overwrite' mode completely syncs the Gateway with the YAML definition
+    - aws apigateway put-rest-api
+      --rest-api-id $API_ID
+      --mode overwrite
+      --body 'file://openapi.yaml'
+
+    - echo "Creating deployment for stage 'v1'..."
+    - aws apigateway create-deployment
+      --rest-api-id $API_ID
+      --stage-name v1
+      --description "Automated deployment from GitLab Pipeline $CI_PIPELINE_ID"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH # Only deploy on merges to main/master

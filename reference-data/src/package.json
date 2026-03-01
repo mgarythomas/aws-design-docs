@@ -1,0 +1,19 @@
+{
+  "name": "reference-data-api",
+  "version": "1.0.0",
+  "description": "TypeScript Lambdas for Capital Markets Reference Data API",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test": "npm run test:unit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/aws-lambda": "^8.10.130",
+    "@types/node": "^20.19.35",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
