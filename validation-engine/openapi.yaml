@@ -16,6 +16,13 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CorporateActionDocument"
+      x-amazon-apigateway-integration:
+        type: "http_proxy"
+        httpMethod: "POST"
+        connectionType: "VPC_LINK"
+        connectionId: "${stageVariables.vpcLinkId}"
+        uri: "http://${stageVariables.internalNlbDomain}/v1/validate/corporate-action"
+        passthroughBehavior: "when_no_match"
       responses:
         "200":
           description: Validation result
@@ -35,6 +42,13 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/FieldValidationRequest"
+      x-amazon-apigateway-integration:
+        type: "http_proxy"
+        httpMethod: "POST"
+        connectionType: "VPC_LINK"
+        connectionId: "${stageVariables.vpcLinkId}"
+        uri: "http://${stageVariables.internalNlbDomain}/v1/validate/field"
+        passthroughBehavior: "when_no_match"
       responses:
         "200":
           description: Validation result

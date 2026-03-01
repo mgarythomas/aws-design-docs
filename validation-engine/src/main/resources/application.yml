@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: validation-engine
+
+server:
+  port: 8080
+
+opa:
+  url: ${OPA_URL:http://localhost:8181}
+
+s3:
+  bucket:
+    policies: ${S3_BUCKET_POLICIES:det-exchange-policies}
+
+policy:
+  refresh:
+    rate: 60000
+
+logging:
+  level:
+    com.det.exchange: DEBUG
