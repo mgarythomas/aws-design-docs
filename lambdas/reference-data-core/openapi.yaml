@@ -1,0 +1,397 @@
+openapi: 3.0.3
+info:
+  title: Reference Data Internal API
+  description: Private Core API for executing reference data queries against the RDS
+    Proxied database.
+  version: 1.1.0
+servers:
+- url: https://api.yourdomain.com/v1
+x-amazon-apigateway-binary-media-types:
+- application/octet-stream
+- application/x-protobuf
+x-amazon-apigateway-gateway-responses:
+  UNAUTHORIZED:
+    statusCode: 401
+    responseTemplates:
+      application/json: '{"message": "Invalid API Key or Bearer Token provided."}'
+paths:
+  /venues/{mic}:
+    get:
+      summary: Retrieve Venue Data by MIC
+      tags:
+      - Venue Data
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${stageVariables.GetVenueFunctionArn}/invocations
+        passthroughBehavior: when_no_match
+      parameters:
+      - name: mic
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Z0-9]{4}$
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Venue'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /issuers/{lei}:
+    get:
+      summary: Retrieve Issuer Data by LEI
+      tags:
+      - Issuer Data
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${stageVariables.GetIssuerFunctionArn}/invocations
+        passthroughBehavior: when_no_match
+      parameters:
+      - name: lei
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[0-9A-Z]{20}$
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issuer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /instruments:
+    get:
+      summary: Search Financial Instruments
+      tags:
+      - Instrument Data
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${stageVariables.SearchInstrumentsFunctionArn}/invocations
+        passthroughBehavior: when_no_match
+      parameters:
+      - name: ticker
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: mic
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Matching instruments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Instrument'
+  /instruments/{figi}/corporate-actions:
+    get:
+      summary: Get Corporate Actions for an Instrument
+      tags:
+      - Corporate Actions
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${stageVariables.GetCorporateActionsFunctionArn}/invocations
+        passthroughBehavior: when_no_match
+      parameters:
+      - name: figi
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[0-9A-Z]{12}$
+      responses:
+        '200':
+          description: List of corporate action events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CorporateActionEvent'
+  /calendars/{businessCenter}:
+    get:
+      summary: Get Trading Calendar Holidays
+      tags:
+      - Trading Calendars
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${stageVariables.GetCalendarFunctionArn}/invocations
+        passthroughBehavior: when_no_match
+      parameters:
+      - name: businessCenter
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradingCalendar'
+  /marketdata/{figi}/snapshot:
+    get:
+      summary: Get Market Data Snapshot (FIX Protocol mapped)
+      tags:
+      - Pricing Data
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${stageVariables.GetMarketDataSnapshotFunctionArn}/invocations
+        passthroughBehavior: when_no_match
+      parameters:
+      - name: figi
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful market data snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketDataSnapshot'
+components:
+  schemas:
+    CountryCode:
+      type: string
+      pattern: ^[A-Z]{2}$
+      example: AU
+    CurrencyCode:
+      type: string
+      pattern: ^[A-Z]{3}$
+      example: AUD
+    Venue:
+      type: object
+      required:
+      - mic
+      - name
+      - countryCode
+      properties:
+        mic:
+          type: string
+          example: XASX
+        operatingMic:
+          type: string
+          example: XASX
+        name:
+          type: string
+          example: ASX - ALL MARKETS
+        countryCode:
+          $ref: '#/components/schemas/CountryCode'
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - MODIFIED
+          - INACTIVE
+          example: ACTIVE
+    IndustryClassification:
+      type: object
+      required:
+      - classificationSystem
+      - code
+      - name
+      properties:
+        classificationSystem:
+          type: string
+          example: ANZSIC
+        code:
+          type: string
+          example: K622
+        name:
+          type: string
+          example: Financial Asset Investing
+        level:
+          type: string
+          example: Class
+    Issuer:
+      type: object
+      required:
+      - lei
+      - legalName
+      - legalJurisdiction
+      properties:
+        lei:
+          type: string
+          example: 549300G19KEE21R33259
+        legalName:
+          type: string
+          example: Commonwealth Bank of Australia
+        legalJurisdiction:
+          $ref: '#/components/schemas/CountryCode'
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+          example: ACTIVE
+        industryClassifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/IndustryClassification'
+    Instrument:
+      type: object
+      required:
+      - figi
+      - issuerLei
+      - ticker
+      - mic
+      - assetClass
+      properties:
+        figi:
+          type: string
+          example: BBG000BMQKR3
+        issuerLei:
+          type: string
+          example: 549300G19KEE21R33259
+        isin:
+          type: string
+          example: AU000000CBA7
+        ticker:
+          type: string
+          example: CBA
+        compositeTicker:
+          type: string
+          example: CBA.AX
+        mic:
+          type: string
+          example: XASX
+        assetClass:
+          type: string
+          enum:
+          - EQUITY
+          - DERIVATIVE
+          - FIXED_INCOME
+          example: EQUITY
+        cfiCode:
+          type: string
+          example: ESVUFR
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        contractSpecs:
+          type: object
+          description: Dynamic JSON for derivative specific terms (strike, expiry,
+            multiplier)
+    CorporateActionEvent:
+      type: object
+      required:
+      - eventId
+      - eventType
+      - figi
+      - exDate
+      properties:
+        eventId:
+          type: string
+          example: CA-2026-98765
+        eventType:
+          type: string
+          enum:
+          - DVCA
+          - SPLF
+          - MRGR
+          - SPIN
+          - DVDT
+          example: DVCA
+        figi:
+          type: string
+          example: BBG000BMQKR3
+        exDate:
+          type: string
+          format: date
+          example: '2026-03-01'
+        terms:
+          $ref: '#/components/schemas/CorporateActionTerms'
+    CorporateActionTerms:
+      type: object
+      properties:
+        grossDividendRate:
+          type: number
+          example: 2.15
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+    TradingCalendar:
+      type: object
+      required:
+      - businessCenter
+      - calendarYear
+      - holidays
+      properties:
+        businessCenter:
+          type: string
+          example: AUSY
+        calendarYear:
+          type: integer
+          example: 2026
+        holidays:
+          type: array
+          items:
+            type: string
+            format: date
+    MarketDataSnapshot:
+      type: object
+      required:
+      - figi
+      - timestamp
+      - entries
+      properties:
+        figi:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketDataEntry'
+    MarketDataEntry:
+      type: object
+      required:
+      - entryType
+      - price
+      properties:
+        entryType:
+          type: string
+          enum:
+          - '0'
+          - '1'
+          - '2'
+          - '6'
+          example: '0'
+        price:
+          type: number
+          example: 105.5
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 404
+        message:
+          type: string
+          example: Resource not found
+  responses:
+    NotFound:
+      description: The requested resource could not be found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
