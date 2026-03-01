@@ -1,5 +1,6 @@
-> **Note:** This document has been deprecated and is no longer maintained. Please refer to the new [Validation Framework Design Document](../docs/validation-framework-design.md) for the latest information.
+# Validation Engine Design Document (ISO 20022 SEEV Expansion)
 
+> **Note:** This document builds upon the original validation engine design to focus specifically on the ISO 20022 SEEV message format considerations and its integration with the React/Next.js frontend.
 # Validation Engine Design Document
 
 ## 1. Introduction
@@ -188,3 +189,48 @@ The frontend would query an endpoint like `POST /v1/data/corporate_action/ui/com
 *   **Dynamic Policy Loading**: The validation engine could be enhanced to load policies dynamically from a central repository, allowing for easier management of the validation rules.
 *   **gRPC Support**: To improve performance, the validation engine could be exposed via a gRPC interface in addition to the REST API.
 *   **Integration with a Schema Registry**: The validation engine could be integrated with a schema registry to automatically generate basic validation rules from the submission schemas.
+
+## 9. ISO 20022 SEEV Corporate Action Validation Specifications
+
+This section specifies the validation rules required to process a corporate action according to the ISO 20022 SEEV message format (e.g., `seev.031` Corporate Action Notification). The engine is designed to support the corresponding data schema defined in the frontend (`corporateActionSchema.ts`).
+
+### 9.1 Corporate Action General Information
+*   **Official Corporate Action Event ID** (`officialCorporateActionEventID`): Must be present and cannot be empty.
+*   **Event Type** (`eventType`): Must be a valid ISO 20022 event type code. Supported values: `DVCA` (Cash Dividend), `SPLF` (Forward Split), `MRGR` (Merger), `RHTS` (Rights Issue).
+*   **Mandatory/Voluntary Event Type** (`mandatoryVoluntaryEventType`): Must be one of `MAND` (Mandatory), `VOLU` (Voluntary), or `CHOS` (Mandatory with Options / Choices).
+
+### 9.2 Underlying Security
+*   **ISIN** (`isin`): The International Securities Identification Number must strictly adhere to the ISO 6166 format. This is validated using the regular expression `^[A-Z]{2}[A-Z0-9]{9}[0-9]$` (2-letter country code, 9-character alphanumeric identifier, and a single numeric check digit).
+*   **Ticker** (`ticker`): Optional.
+
+### 9.3 Corporate Action Details
+#### 9.3.1 Dates
+Validation rules for chronological logic must be enforced.
+*   **Announcement Date** (`announcementDate`): Required. Must be a valid date.
+*   **Ex-Date** (`exDate`): Optional, but if provided, must be a valid date and must be evaluated against the `announcementDate` (Ex-date must be after the announcement date).
+*   **Record Date** (`recordDate`): Required. Must be a valid date.
+*   **Payment Date** (`paymentDate`): Required. Must be a valid date. Evaluated against `recordDate` (Payment date must be on or after the record date depending on local market rules).
+
+#### 9.3.2 Rate and Price
+*   **Gross Dividend Rate Amount** (`grossDividendRate.amount`): If provided, must be a positive number.
+*   **Currency** (`grossDividendRate.currency`): Must conform to the 3-letter ISO 4217 standard currency codes. Evaluated with regex `^[A-Z]{3}$`.
+
+### 9.4 Corporate Action Options
+*   A minimum of one valid option must be presented (`options` array cannot be empty).
+*   **Option Number** (`optionNumber`): Must be a non-empty string.
+*   **Option Type** (`optionType`): Must be a valid SEEV option type code. Supported values: `CASH`, `SECU` (Securities), `LAPS` (Lapse).
+*   **Default Option** (`defaultOption`): Optional boolean.
+
+## 10. Granular API Specification
+
+To securely and interactively support the React/Next.js frontend, the Validation Engine exposes specific endpoints mapped to the Zod schema (`corporateActionSchema.ts`). The complete OpenAPI specification is located in `openapi.yaml`.
+
+### 10.1 Document-Level Endpoints
+Used on final form submission.
+`POST /v1/validate/corporate-action`
+Validates the entire SEEV document payload against all Rego policies governing the ISO 20022 layout.
+
+### 10.2 Field/Attribute-Level Endpoints
+Used dynamically as the user fills out the form in the UI.
+`POST /v1/validate/field`
+Accepts a `fieldName` (e.g., `underlyingSecurity.isin`), the current `value`, and optionally the surrounding `context` (the partial document payload) to evaluate cross-field policies, such as checking `exDate` against `announcementDate`. The response provides targeted error messages and validation status specifically tied to the UI element's hook form path.

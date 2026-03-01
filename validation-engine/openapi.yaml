@@ -1,0 +1,207 @@
+openapi: 3.0.3
+info:
+  title: Corporate Action Validation Engine API
+  description: API for validating ISO20022 SEEV format Corporate Actions, supporting both document-level and field-level validations.
+  version: 1.0.0
+servers:
+  - url: /v1/validate
+paths:
+  /corporate-action:
+    post:
+      summary: Validate an entire Corporate Action SEEV document
+      operationId: validateCorporateAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CorporateActionDocument"
+      responses:
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationResponse"
+        "400":
+          description: Invalid request payload format
+  /field:
+    post:
+      summary: Validate a single field or attribute of a Corporate Action
+      operationId: validateCorporateActionField
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FieldValidationRequest"
+      responses:
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationResponse"
+        "400":
+          description: Invalid request payload format
+
+components:
+  schemas:
+    CorporateActionDocument:
+      type: object
+      properties:
+        corporateActionGeneralInformation:
+          $ref: "#/components/schemas/CorporateActionGeneralInformation"
+        underlyingSecurity:
+          $ref: "#/components/schemas/UnderlyingSecurity"
+        corporateActionDetails:
+          $ref: "#/components/schemas/CorporateActionDetails"
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/CorporateActionOption"
+          minItems: 1
+      required:
+        - corporateActionGeneralInformation
+        - underlyingSecurity
+        - corporateActionDetails
+        - options
+
+    CorporateActionGeneralInformation:
+      type: object
+      properties:
+        officialCorporateActionEventID:
+          type: string
+          minLength: 1
+          description: Official Corporate Action Event ID
+        eventType:
+          type: string
+          enum: [DVCA, SPLF, MRGR, RHTS]
+          description: ISO20022 Corporate Action Event Type
+        mandatoryVoluntaryEventType:
+          type: string
+          enum: [MAND, VOLU, CHOS]
+          description: Mandatory/Voluntary Event Type
+      required:
+        - officialCorporateActionEventID
+        - eventType
+        - mandatoryVoluntaryEventType
+
+    UnderlyingSecurity:
+      type: object
+      properties:
+        isin:
+          type: string
+          pattern: "^[A-Z]{2}[A-Z0-9]{9}[0-9]$"
+          description: ISIN of the underlying security (ISO 6166)
+        ticker:
+          type: string
+          description: Optional ticker symbol
+      required:
+        - isin
+
+    CorporateActionDetails:
+      type: object
+      properties:
+        dates:
+          $ref: "#/components/schemas/CorporateActionDates"
+        rateAndPrice:
+          $ref: "#/components/schemas/RateAndPrice"
+      required:
+        - dates
+
+    CorporateActionDates:
+      type: object
+      properties:
+        announcementDate:
+          type: string
+          format: date-time
+        exDate:
+          type: string
+          format: date-time
+        recordDate:
+          type: string
+          format: date-time
+        paymentDate:
+          type: string
+          format: date-time
+      required:
+        - announcementDate
+        - recordDate
+        - paymentDate
+
+    RateAndPrice:
+      type: object
+      properties:
+        grossDividendRate:
+          $ref: "#/components/schemas/GrossDividendRate"
+
+    GrossDividendRate:
+      type: object
+      properties:
+        amount:
+          type: number
+          exclusiveMinimum: 0
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          minLength: 3
+          maxLength: 3
+          description: ISO 4217 Currency Code
+
+    CorporateActionOption:
+      type: object
+      properties:
+        optionNumber:
+          type: string
+          minLength: 1
+        optionType:
+          type: string
+          enum: [CASH, SECU, LAPS]
+        defaultOption:
+          type: boolean
+      required:
+        - optionNumber
+        - optionType
+
+    FieldValidationRequest:
+      type: object
+      properties:
+        fieldName:
+          type: string
+          description: The JSON path or name of the field to validate (e.g. 'corporateActionGeneralInformation.eventType')
+        value:
+          type: string
+          description: The value to validate (can be any type, represented as JSON/string)
+        context:
+          type: object
+          description: The entire document context to evaluate cross-field rules (e.g. exDate > announcementDate)
+      required:
+        - fieldName
+        - value
+
+    ValidationResponse:
+      type: object
+      properties:
+        isValid:
+          type: boolean
+          description: Indicates whether the payload or field is valid
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationError"
+      required:
+        - isValid
+
+    ValidationError:
+      type: object
+      properties:
+        path:
+          type: string
+          description: JSON path to the field that failed validation (e.g. 'underlyingSecurity.isin')
+        message:
+          type: string
+          description: Human readable error message
+      required:
+        - path
+        - message
