@@ -89,22 +89,25 @@ The target architecture is a **Event-Driven Microservices** platform hosted on A
 ### 8.1 Network Topology & Components
 
 #### DMZ VPC (Public Zone)
-*   **AWS Amplify**: Hosting the React SPA (Design System: Figma → Tailwind → React/Shadcn).
+*   **EKS (Elastic Kubernetes Service)**: Hosting the Next.js/Node.js application stack. Network connectivity from this EKS cluster is explicitly restricted to only the Internal API Gateway, Amazon S3, and Amazon EventBridge.
 *   **External API Gateway**: Public entry point, handling rate limiting and WAF rules.
 *   **DMZ Lambda**: Performs lightweight schema validation and session checks.
 *   **Elasticache (ValKey)**: Stores transient session data and cache. **No database access**.
+*   **Egress Proxy (NLB + Envoy)**: An internal Network Load Balancer routing to an Auto Scaling Group of Envoy proxies. This provides high availability, auto-scaling, and static connection parsing to isolated endpoints in the On-Premise DMZ.
 
 #### Internal VPC (Trusted Zone)
 *   **Internal API Gateway**: Bridge between DMZ and Internal services.
 *   **Internal Lambda**: Executes core business logic and persistence.
 *   **Aurora Postgres**: The System of Record. Stores submissions and request logs.
-*   **Amazon EventBridge**: Enterprise Service Bus for decoupling domains.
+*   **Amazon EventBridge**: Enterprise Service Bus for domain event routing.
 *   **EKS (Elastic Kubernetes Service)**: Hosts complex orchestration workflows and legacy bridges.
-*   **Amazon SQS**: Provides durability buffering and retry queues.
+*   **Amazon SQS**: Provides durability buffering, retry queues, and acts as an asynchronous target for EventBridge to enforce backpressure on consuming internal services.
 
 #### On-Premise Integration
-*   **Connectivity**: Direct Connect / VPN from Internal VPC only.
-*   **Legacy Bridge**: Services running in EKS connect to on-premise submission processors.
+*   **Connectivity Constraints**: 
+    1. **AWS DMZ VPC** connects exclusively to the **On-Premise DMZ** (e.g., VLAN120).
+    2. **AWS Internal VPC** connects exclusively to the **Internal On-Premise Network**.
+*   **Legacy Bridge / Database Access**: Internal VPC services (Lambdas or EKS containers) needing access to legacy databases located in the On-Premise DMZ (like `pwapdb204/104` in VLAN120) *must* route their traffic outbound via the Egress Proxy stationed in the AWS DMZ VPC. Direct linkage from Internal AWS to DMZ On-Prem is prohibited.
 
 ### 8.2 Architecture Diagrams (C4 Model)
 
@@ -139,10 +142,11 @@ C4Container
     Person(issuer, "Issuer", "Web Browser")
     
     Container_Boundary(dmz, "DMZ VPC (Public)") {
-        Container(spa, "Single Page App", "React, AWS Amplify", "User Interface for submissions")
+        Container(spa, "Next.js Web App", "Next.js/Node.js, EKS", "User Interface for submissions")
         Container(ext_api, "External API Gateway", "AWS APIGW", "Public Entry Point & WAF")
         Container(dmz_auth, "Auth/Validation Lambda", "Node.js", "Validates Session & Schema. No DB access.")
         ContainerDb(valkey, "Session Cache", "Elasticache ValKey", "Stores transient sessions")
+        Container(egress_proxy, "Egress Proxy (Envoy + NLB)", "ASG/EC2", "Highly Available & Scalable proxy out to On-Premise DMZ")
     }
     
     Container_Boundary(internal, "Internal VPC (Trusted)") {
@@ -181,13 +185,16 @@ C4Container
         Container(svc_archive, "Data Archive", "Lambda/S3", "Long-term storage")
 
         ContainerDb(db, "System of Record", "Aurora Postgres", "Stores Submissions & Logs")
-        ContainerQueue(bus, "Event Bus", "EventBridge", "Async Decoupling")
+        ContainerQueue(bus, "Event Bus", "EventBridge", "Async Event Routing")
+        ContainerQueue(bus_sqs, "Orchestration Queue", "SQS", "Backpressure & Retries")
     }
     
-    System_Ext(legacy, "Legacy System", "On-Premise")
+    System_Ext(legacy, "Legacy System", "On-Premise Internal Network")
+    System_Ext(legacy_dmz_db, "Legacy DB (pwapdb204/104)", "On-Premise DMZ (VLAN120)")
 
     Rel(issuer, spa, "Uses", "HTTPS")
-    Rel(spa, ext_api, "API Calls", "JSON/HTTPS")
+    Rel(spa, int_api, "Backend API Calls", "JSON/HTTPS via VPCE")
+    Rel(spa, bus, "Publishes Events", "AWS SDK")
     Rel(ext_api, dmz_auth, "Invokes")
     Rel(dmz_auth, int_api, "Forwards Request")
     
@@ -199,8 +206,11 @@ C4Container
     
     Rel(svc_submission, db, "Writes")
     Rel(svc_submission, bus, "Publishes")
-    Rel(bus, svc_disc_orch, "Triggers")
-    Rel(svc_disc_orch, legacy, "Integrates")
+    Rel(bus, bus_sqs, "Routes to (Async Buffer)")
+    Rel(bus_sqs, svc_disc_orch, "Consumes (Backpressure)")
+    Rel(svc_disc_orch, legacy, "Integrates with internal APIs")
+    Rel(svc_disc_orch, egress_proxy, "Routes outbound DMZ DB traffic via")
+    Rel(egress_proxy, legacy_dmz_db, "Connects to over Direct Connect")
 ```
 
 ### 8.3 Service Catalog
@@ -320,6 +330,8 @@ end
 
 ### 9.1 Patterns
 *   **Transactional Outbox**: To guarantee event delivery, the Internal Lambda writes the submission and the event to Postgres in a single transaction. A background process publishes the event to EventBridge.
+*   **Event-Driven Backpressure**: EventBridge routes events to SQS queues before they are consumed by downstream services (like EKS orchestrators). This protects internal computing resources from traffic spikes and scales message processing gracefully.
+*   **Egress Proxy Bridging**: Workloads within the Internal VPC requiring access to on-premise DMZ resources (e.g., VLAN120 databases) route through an internal Network Load Balancer (NLB) into an Auto Scaling Group of stateless Envoy proxies. This enforces strict "No Direct Cross-Border Routing" while utilizing Envoy's robust connection pooling capability and OpenTelemetry metric emissions.
 *   **Circuit Breaker**: Implemented in adapters to prevent cascading failures when downstream systems (e.g., On-Prem) are slow.
 *   **Saga Pattern**: Manages distributed transactions across the Submission and Notification contexts.
 *   **Configurable Validation**: Validation logic is decoupled from the Orchestrator. Rules are defined in the `Forms Program Service` and executed by the generic `Submission Validation Engine` to support diverse submission types without code changes.
