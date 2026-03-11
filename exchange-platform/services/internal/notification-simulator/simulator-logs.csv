@@ -1,0 +1,13 @@
+timestamp,channel,destination,payload,status
+2026-03-11T12:41:33.290117Z,EMAIL,batch1@example.com,"{subject=Notification from Playwright, to=batch1@example.com, body=Hello Batch 1, welcome-template}",ACCEPTED
+2026-03-11T12:41:33.290117Z,EMAIL,test@example.com,"{subject=Notification from Playwright, to=test@example.com, body=Hello Gary, welcome-template}",ACCEPTED
+2026-03-11T12:41:33.319619Z,EMAIL,batch2@example.com,"{subject=Notification from Playwright, to=batch2@example.com, body=Hello Batch 2, welcome-template}",ACCEPTED
+2026-03-11T12:43:42.923488Z,EMAIL,batch1@example.com,"{to=batch1@example.com, body=Hello Batch 1, welcome-template, subject=Notification from Playwright}",ACCEPTED
+2026-03-11T12:43:42.923487Z,EMAIL,test@example.com,"{to=test@example.com, body=Hello Gary, welcome-template, subject=Notification from Playwright}",ACCEPTED
+2026-03-11T12:43:42.953378Z,EMAIL,batch2@example.com,"{to=batch2@example.com, body=Hello Batch 2, welcome-template, subject=Notification from Playwright}",ACCEPTED
+2026-03-11T13:06:45.551986Z,EMAIL,test@example.com,"{to=test@example.com, body=Hello Gary, welcome-template, subject=Notification from Playwright}",ACCEPTED
+2026-03-11T13:06:45.551984Z,EMAIL,batch1@example.com,"{to=batch1@example.com, body=Hello Batch 1, welcome-template, subject=Notification from Playwright}",ACCEPTED
+2026-03-11T13:06:45.580902Z,EMAIL,batch2@example.com,"{to=batch2@example.com, body=Hello Batch 2, welcome-template, subject=Notification from Playwright}",ACCEPTED
+2026-03-11T13:07:35.926890Z,EMAIL,test@example.com,"{to=test@example.com, body=Hello Gary, welcome-template, subject=Notification from Playwright}",ACCEPTED
+2026-03-11T13:07:35.926890Z,EMAIL,batch1@example.com,"{to=batch1@example.com, body=Hello Batch 1, welcome-template, subject=Notification from Playwright}",ACCEPTED
+2026-03-11T13:07:35.932479Z,EMAIL,batch2@example.com,"{to=batch2@example.com, body=Hello Batch 2, welcome-template, subject=Notification from Playwright}",ACCEPTED

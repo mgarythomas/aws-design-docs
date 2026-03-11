@@ -1,0 +1,9 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: notification-simulator
+  datasource:
+    url: jdbc:duckdb:./simulator-logs.duckdb
+    driver-class-name: org.duckdb.DuckDBDriver

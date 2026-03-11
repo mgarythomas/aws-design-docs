@@ -1,0 +1,37 @@
+replicaCount: 2
+
+image:
+  repository: my-registry/notification-service
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+  hosts:
+    - host: notification-service.internal
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1024Mi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# HashiCorp Vault Annotations
+vault:
+  enabled: true
+  role: "notification-service-role"
+  secretPath: "secret/data/notification-service/rds"

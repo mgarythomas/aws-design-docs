@@ -1,0 +1,6 @@
+apiVersion: v2
+name: notification-service
+description: A Helm chart for deploying the Spring Boot Notification Service to EKS
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

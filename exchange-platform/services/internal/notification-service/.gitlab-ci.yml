@@ -1,0 +1,50 @@
+image: docker:20.10.16
+
+services:
+  - docker:20.10.16-dind
+
+variables:
+  DOCKER_TLS_CERTDIR: "/certs"
+  SONAR_HOST_URL: "http://sonarqube.internal:9000"
+
+stages:
+  - build
+  - test
+  - sonar
+  - docker
+  - deploy
+
+build:
+  stage: build
+  image: eclipse-temurin:21-jdk-alpine
+  script:
+    - ./gradlew clean build -x test
+  artifacts:
+    paths:
+      - service/build/libs/*.jar
+      - service/build/classes
+
+test:
+  stage: test
+  image: eclipse-temurin:21-jdk-alpine
+  script:
+    - ./gradlew test
+
+sonar:
+  stage: sonar
+  image: eclipse-temurin:21-jdk-alpine
+  script:
+    - ./gradlew sonar -Dsonar.projectKey=notification-service -Dsonar.host.url=$SONAR_HOST_URL -Dsonar.login=$SONAR_TOKEN
+
+docker-build:
+  stage: docker
+  script:
+    - docker build -t my-registry/notification-service:$CI_COMMIT_SHA .
+    - docker push my-registry/notification-service:$CI_COMMIT_SHA
+
+deploy-eks:
+  stage: deploy
+  image: dtzar/helm-kubectl:latest
+  script:
+    - aws eks --region eu-west-1 update-kubeconfig --name internal-cluster
+    - helm upgrade --install notification-service ./infrastructure/helm/notification-service --set image.tag=$CI_COMMIT_SHA --namespace backend

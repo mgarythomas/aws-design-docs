@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "notification-service.fullname" . }}
+  labels:
+    {{- include "notification-service.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "notification-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- if .Values.vault.enabled }}
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "{{ .Values.vault.role }}"
+        vault.hashicorp.com/agent-inject-secret-database: "{{ .Values.vault.secretPath }}"
+        vault.hashicorp.com/agent-inject-template-database: |
+          {{`{{- with secret "`}}{{ .Values.vault.secretPath }}{{`" -}}
+          export SPRING_DATASOURCE_USERNAME="{{ .Data.data.username }}"
+          export SPRING_DATASOURCE_PASSWORD="{{ .Data.data.password }}"
+          export SPRING_DATASOURCE_URL="{{ .Data.data.url }}"
+          {{- end }}`}}
+      {{- end }}
+      labels:
+        {{- include "notification-service.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          command:
+            - "sh"
+            - "-c"
+          args:
+            - "source /vault/secrets/database && java -jar app.jar"
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

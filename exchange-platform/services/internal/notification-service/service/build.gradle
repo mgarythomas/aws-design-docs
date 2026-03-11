@@ -1,0 +1,10 @@
+dependencies {
+    // Audit db
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.postgresql:postgresql'
+    runtimeOnly 'com.h2database:h2'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    
+    // Templating Support
+    implementation 'com.github.spullara.mustache.java:compiler:0.9.11'
+}

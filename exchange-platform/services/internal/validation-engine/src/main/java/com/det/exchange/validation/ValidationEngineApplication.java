@@ -12,4 +12,9 @@ public class ValidationEngineApplication {
 		SpringApplication.run(ValidationEngineApplication.class, args);
 	}
 
+	@org.springframework.context.annotation.Bean
+	public org.springframework.web.client.RestClient.Builder restClientBuilder() {
+		return org.springframework.web.client.RestClient.builder();
+	}
+
 }

@@ -1,0 +1,259 @@
+openapi: 3.0.3
+info:
+  title: Notification Service API
+  version: 1.0.0
+  description: API for the enterprise Notification Service for routing messages across multiple delivery channels.
+servers:
+  - url: https://api.dmz.example.com/v1
+    description: External DMZ API Gateway
+
+paths:
+  /notifications:
+    post:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: POST
+        uri: http://internal-api.example.local/v1/notifications
+      summary: Send a single notification
+      description: Submit a single notification request specifying channel, destination, and template context.
+      operationId: sendSingleNotification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRequest'
+      responses:
+        '202':
+          description: Notification conditionally accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+        '400':
+          description: Invalid request payload
+        '500':
+          description: Internal server error
+
+  /notifications/batch:
+    post:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: POST
+        uri: http://internal-api.example.local/v1/notifications/batch
+      summary: Send multiple notifications
+      description: Submit an array of notifications to be processed in a single batch.
+      operationId: sendBatchNotifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/NotificationRequest'
+      responses:
+        '202':
+          description: Batch accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchNotificationResponse'
+        '400':
+          description: Invalid request payload
+
+
+  /users/{userId}/notifications:
+    post:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: POST
+        uri: http://internal-api.example.local/v1/users/{userId}/notifications
+      summary: Generate a user notification
+      description: Create a notification or alert registered against an individual user.
+      operationId: createUserNotification
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier for the user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserNotificationRequest'
+      responses:
+        '201':
+          description: User notification created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserNotificationResponse'
+        '400':
+          description: Invalid request payload
+        '500':
+          description: Internal server error
+
+    get:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: GET
+        uri: http://internal-api.example.local/v1/users/{userId}/notifications
+      summary: Get user notifications
+      description: Retrieve notifications and alerts for a specific user.
+      operationId: getUserNotifications
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier for the user.
+      responses:
+        '200':
+          description: List of user notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserNotificationResponse'
+        '500':
+          description: Internal server error
+
+  /users/{userId}/notifications/{notificationId}:
+    delete:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: DELETE
+        uri: http://internal-api.example.local/v1/users/{userId}/notifications/{notificationId}
+      summary: Delete a user notification
+      description: Deletes a specific notification for a user.
+      operationId: deleteUserNotification
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Notification deleted successfully
+        '404':
+          description: Notification not found
+        '500':
+          description: Internal server error
+components:
+  schemas:
+    Channel:
+      type: string
+      enum:
+        - EMAIL
+        - SMS
+        - WHATSAPP
+        - SIGNAL
+        - BLUESKY
+        - X
+      description: The delivery medium for the given notification.
+      
+    NotificationRequest:
+      type: object
+      required:
+        - channel
+        - destination
+        - templateId
+      properties:
+        channel:
+          $ref: '#/components/schemas/Channel'
+        destination:
+          type: string
+          description: The endpoint recipient (e.g., email address, phone number).
+        source:
+          type: string
+          description: Originating service or user triggering the notification. Used for auditing.
+        templateId:
+          type: string
+          description: Unique identifier of the message template to render.
+        templatePayload:
+          type: object
+          description: Key-value map of dynamic properties injected into the template.
+          additionalProperties: true
+
+    NotificationResponse:
+      type: object
+      properties:
+        notificationId:
+          type: string
+          format: uuid
+          description: Unique identifier for tracking this specific notification's delivery state.
+        status:
+          type: string
+          enum: [ACCEPTED, REJECTED]
+          
+    BatchNotificationResponse:
+      type: object
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        acceptedCount:
+          type: integer
+        notifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationResponse'
+
+    UserNotificationRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: The main content of the notification or alert.
+        metadata:
+          type: object
+          description: Arbitrary key-value metadata associated with the notification.
+          additionalProperties: true
+        activeStartDate:
+          type: string
+          format: date-time
+          description: The date and time when the notification becomes active.
+        activeEndDate:
+          type: string
+          format: date-time
+          description: The date and time when the notification expires or becomes inactive.
+
+    UserNotificationResponse:
+      type: object
+      properties:
+        notificationId:
+          type: string
+          format: uuid
+          description: Unique identifier for the user notification.
+        userId:
+          type: string
+          description: The user this notification belongs to.
+        message:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        activeStartDate:
+          type: string
+          format: date-time
+        activeEndDate:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
