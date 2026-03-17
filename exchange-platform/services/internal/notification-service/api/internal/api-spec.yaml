@@ -66,6 +66,40 @@ paths:
         '400':
           description: Invalid request payload
 
+  /notifications/list:
+    post:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: POST
+        uri: http://notification-service.internal/notifications/list
+        connectionType: VPC_LINK
+        connectionId: "${vpc_link_id}"
+      summary: Send a notification to a distribution list
+      description: |
+        Dispatches a notification to all active subscribers of the specified distribution list.
+        The service resolves the `listId` to the underlying SFMC Data Extension and executes
+        a Triggered Send for all members. Useful for broadcast or scheduled campaign delivery.
+      operationId: sendToDistributionList
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListNotificationRequest'
+      responses:
+        '202':
+          description: Notification accepted for distribution list delivery
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+        '400':
+          description: Invalid request payload
+        '404':
+          description: Distribution list not found
+        '500':
+          description: Internal server error
+
 
   /users/{userId}/notifications:
     post:
@@ -162,6 +196,134 @@ paths:
           description: Notification not found
         '500':
           description: Internal server error
+  /distribution-lists:
+    post:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: POST
+        uri: http://notification-service.internal/distribution-lists
+        connectionType: VPC_LINK
+        connectionId: "${vpc_link_id}"
+      summary: Create a distribution list
+      description: Creates a new distribution list (SFMC Data Extension) for targeted notification delivery.
+      operationId: createDistributionList
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DistributionListRequest'
+      responses:
+        '201':
+          description: Distribution list created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistributionList'
+        '400':
+          description: Invalid request payload
+        '500':
+          description: Internal server error
+
+  /distribution-lists/{listId}:
+    get:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: GET
+        uri: http://notification-service.internal/distribution-lists/{listId}
+        connectionType: VPC_LINK
+        connectionId: "${vpc_link_id}"
+      summary: Get a distribution list
+      description: Retrieve metadata for a specific distribution list by its identifier.
+      operationId: getDistributionList
+      parameters:
+        - name: listId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Unique identifier of the distribution list.
+      responses:
+        '200':
+          description: Distribution list found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistributionList'
+        '404':
+          description: Distribution list not found
+        '500':
+          description: Internal server error
+
+  /distribution-lists/{listId}/subscribers:
+    post:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: POST
+        uri: http://notification-service.internal/distribution-lists/{listId}/subscribers
+        connectionType: VPC_LINK
+        connectionId: "${vpc_link_id}"
+      summary: Add subscribers to a distribution list
+      description: Appends one or more subscribers to an existing distribution list.
+      operationId: addSubscribers
+      parameters:
+        - name: listId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Unique identifier of the distribution list.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/Subscriber'
+      responses:
+        '200':
+          description: Subscribers added successfully
+        '400':
+          description: Invalid subscriber data
+        '404':
+          description: Distribution list not found
+        '500':
+          description: Internal server error
+
+  /distribution-lists/{listId}/subscribers/{subscriberId}:
+    delete:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: DELETE
+        uri: http://notification-service.internal/distribution-lists/{listId}/subscribers/{subscriberId}
+        connectionType: VPC_LINK
+        connectionId: "${vpc_link_id}"
+      summary: Remove a subscriber from a distribution list
+      description: Removes a specific subscriber from the distribution list.
+      operationId: removeSubscriber
+      parameters:
+        - name: listId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subscriberId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Subscriber removed successfully
+        '404':
+          description: Distribution list or subscriber not found
+        '500':
+          description: Internal server error
+
 components:
   schemas:
     Channel:
@@ -179,14 +341,58 @@ components:
       type: object
       required:
         - channel
-        - destination
+        - recipientType
         - templateId
+      description: |
+        Represents a single notification request. The `recipientType` field determines the
+        delivery target: use `SINGLE` with a `destination` address, or `LIST` with a `listId`.
+        Exactly one of `destination` or `listId` must be provided.
       properties:
         channel:
           $ref: '#/components/schemas/Channel'
+        recipientType:
+          type: string
+          enum: [SINGLE, LIST]
+          description: Determines whether to deliver to a single address or a distribution list.
         destination:
           type: string
-          description: The endpoint recipient (e.g., email address, phone number).
+          description: |
+            The endpoint recipient (e.g., email address or phone number).
+            Required when `recipientType` is `SINGLE`.
+        listId:
+          type: string
+          format: uuid
+          description: |
+            The unique identifier of the distribution list to send to.
+            Required when `recipientType` is `LIST`.
+        source:
+          type: string
+          description: Originating service or user triggering the notification. Used for auditing.
+        templateId:
+          type: string
+          description: Unique identifier of the message template to render.
+        templatePayload:
+          type: object
+          description: Key-value map of dynamic properties injected into the template.
+          additionalProperties: true
+
+    ListNotificationRequest:
+      type: object
+      required:
+        - channel
+        - listId
+        - templateId
+      description: |
+        A notification request targeting all members of a distribution list. The service
+        resolves the `listId` to the underlying SFMC Data Extension and dispatches
+        a Triggered Send to all active subscribers.
+      properties:
+        channel:
+          $ref: '#/components/schemas/Channel'
+        listId:
+          type: string
+          format: uuid
+          description: Unique identifier of the distribution list to broadcast to.
         source:
           type: string
           description: Originating service or user triggering the notification. Used for auditing.
@@ -267,3 +473,58 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    DistributionListRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Human-readable name for the distribution list.
+        description:
+          type: string
+          description: Optional description of the list's purpose or audience.
+
+    DistributionList:
+      type: object
+      properties:
+        listId:
+          type: string
+          format: uuid
+          description: Unique identifier for the distribution list.
+        name:
+          type: string
+          description: Human-readable name for the distribution list.
+        description:
+          type: string
+        externalKey:
+          type: string
+          description: The SFMC Data Extension key assigned by the provider upon creation.
+        subscriberCount:
+          type: integer
+          description: Number of active subscribers in the list.
+        createdAt:
+          type: string
+          format: date-time
+
+    Subscriber:
+      type: object
+      required:
+        - email
+      properties:
+        subscriberId:
+          type: string
+          description: Domain identifier for the subscriber (e.g., userId).
+        email:
+          type: string
+          format: email
+          description: Email address of the subscriber.
+        firstName:
+          type: string
+        lastName:
+          type: string
+        attributes:
+          type: object
+          description: Additional key-value attributes to populate on the SFMC Data Extension record.
+          additionalProperties: true

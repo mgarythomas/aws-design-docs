@@ -1,6 +1,7 @@
 package com.example.notification.domain.service;
 
 import com.example.notification.application.ports.out.AuditPort;
+import com.example.notification.application.ports.out.ListRepositoryPort;
 import com.example.notification.application.ports.out.NotificationChannelPort;
 import com.example.notification.application.ports.out.TemplatePort;
 import com.example.notification.domain.Notification;
@@ -35,6 +36,9 @@ class NotificationDomainServiceTest {
     @Mock
     private AuditPort auditPort;
 
+    @Mock
+    private ListRepositoryPort listRepositoryPort;
+
     private NotificationDomainService service;
 
     @BeforeEach
@@ -47,12 +51,12 @@ class NotificationDomainServiceTest {
         lenient().when(emailChannel.supports("EMAIL")).thenReturn(true);
         lenient().when(emailChannel.supports("SMS")).thenReturn(false);
 
-        service = new NotificationDomainService(List.of(emailChannel), templatePort, auditPort);
+        service = new NotificationDomainService(List.of(emailChannel), templatePort, auditPort, listRepositoryPort);
     }
 
     @Test
     void testSend_Success() {
-        Notification notification = Notification.create("EMAIL", "test@example.com", "SystemA", "template-1", Map.of());
+        Notification notification = Notification.createSingle("EMAIL", "test@example.com", "SystemA", "template-1", Map.of());
         when(templatePort.render(eq("template-1"), any())).thenReturn("Rendered Content");
         when(emailChannel.dispatch(notification, "Rendered Content")).thenReturn("DELIVERED");
 
@@ -65,7 +69,7 @@ class NotificationDomainServiceTest {
 
     @Test
     void testSend_FeatureFlagRejected() {
-        Notification notification = Notification.create("SMS", "+1234567890", "SystemA", "template-1", Map.of());
+        Notification notification = Notification.createSingle("SMS", "+1234567890", "SystemA", "template-1", Map.of());
 
         String result = service.send(notification);
 
@@ -76,12 +80,11 @@ class NotificationDomainServiceTest {
 
     @Test
     void testSend_UnsupportedChannel() {
-        // Change feature flag temporarily for this test
         Map<String, Flag<?>> flags = new HashMap<>();
         flags.put("channel-push-enabled", Flag.builder().variant("on", true).defaultVariant("on").build());
         OpenFeatureAPI.getInstance().setProviderAndWait(new InMemoryProvider(flags));
 
-        Notification notification = Notification.create("PUSH", "device-token", "SystemA", "template-1", Map.of());
+        Notification notification = Notification.createSingle("PUSH", "device-token", "SystemA", "template-1", Map.of());
         when(templatePort.render(anyString(), any())).thenReturn("Content");
 
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
@@ -93,7 +96,7 @@ class NotificationDomainServiceTest {
 
     @Test
     void testSend_DispatchException() {
-        Notification notification = Notification.create("EMAIL", "test@example.com", "SystemA", "template-1", Map.of());
+        Notification notification = Notification.createSingle("EMAIL", "test@example.com", "SystemA", "template-1", Map.of());
         when(templatePort.render(any(), any())).thenReturn("Content");
         when(emailChannel.dispatch(any(), any())).thenThrow(new RuntimeException("Network Error"));
 
@@ -104,8 +107,8 @@ class NotificationDomainServiceTest {
 
     @Test
     void testSendBatch() {
-        Notification n1 = Notification.create("EMAIL", "test1@example.com", "Sys", "t1", Map.of());
-        Notification n2 = Notification.create("SMS", "+1", "Sys", "t1", Map.of());
+        Notification n1 = Notification.createSingle("EMAIL", "test1@example.com", "Sys", "t1", Map.of());
+        Notification n2 = Notification.createSingle("SMS", "+1", "Sys", "t1", Map.of());
 
         when(templatePort.render(anyString(), any())).thenReturn("Content");
         when(emailChannel.dispatch(eq(n1), anyString())).thenReturn("DELIVERED");

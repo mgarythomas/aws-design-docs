@@ -1,0 +1,260 @@
+# ==============================================================================
+# GitLab CI/CD Pipeline — Exchange Platform Monorepo
+#
+# Pipeline stages:
+#   1. validate     — lint and static checks
+#   2. migrate-db   — Flyway schema migrations (only when SQL changes)
+#   3. build        — service/lambda compilation and packaging
+#   4. test         — unit and integration tests
+#   5. deploy       — deploy to target environment
+#
+# Database migrations use Flyway CLI, triggered only when migration scripts
+# change (path-based rules). Flyway idempotency ensures re-runs are safe.
+#
+# Connection secrets are injected from GitLab CI/CD Variables, which are
+# populated from AWS Secrets Manager via the GitLab AWS integration.
+# ==============================================================================
+
+default:
+  tags:
+    - aws-eks  # Runner tag — must have VPC access to reach Aurora RDS
+
+stages:
+  - validate
+  - migrate-db
+  - build
+  - test
+  - deploy
+
+# ------------------------------------------------------------------------------
+# Shared configuration
+# ------------------------------------------------------------------------------
+variables:
+  # Flyway
+  FLYWAY_IMAGE: flyway/flyway:10
+  FLYWAY_CONFIG_FILE: exchange-platform/database/flyway.conf
+
+  # Gradle (for Spring Boot services)
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+
+  # AWS Region (non-sensitive)
+  AWS_DEFAULT_REGION: ap-southeast-2
+
+# Reusable OIDC auth snippet for AWS (used by deploy and migration jobs)
+.aws-auth: &aws-auth
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://gitlab.com
+  before_script:
+    - >
+      export $(aws sts assume-role-with-web-identity
+        --role-arn "$AWS_ROLE_ARN"
+        --role-session-name "gitlab-ci-${CI_JOB_ID}"
+        --web-identity-token "$GITLAB_OIDC_TOKEN"
+        --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]"
+        --output text | awk '{print "AWS_ACCESS_KEY_ID="$1"\nAWS_SECRET_ACCESS_KEY="$2"\nAWS_SESSION_TOKEN="$3}')
+    # Fetch DB credentials from Secrets Manager at runtime
+    - export FLYWAY_URL=$(aws secretsmanager get-secret-value --secret-id "$DB_SECRET_ARN" --query 'SecretString' | jq -r '.url')
+    - export FLYWAY_USER=$(aws secretsmanager get-secret-value --secret-id "$DB_SECRET_ARN" --query 'SecretString' | jq -r '.username')
+    - export FLYWAY_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$DB_SECRET_ARN" --query 'SecretString' | jq -r '.password')
+
+# ------------------------------------------------------------------------------
+# STAGE: validate
+# Quick checks that run on every push to catch obvious issues early.
+# ------------------------------------------------------------------------------
+validate:sql-lint:
+  stage: validate
+  image: ${FLYWAY_IMAGE}
+  script:
+    - flyway -configFiles="${FLYWAY_CONFIG_FILE}" validate
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - exchange-platform/database/migrations/**/*.sql
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - exchange-platform/database/migrations/**/*.sql
+
+# ------------------------------------------------------------------------------
+# STAGE: migrate-db
+# Runs Flyway migrate only when migration scripts have changed.
+# Flyway's flyway_schema_history table ensures only unapplied scripts execute.
+# ------------------------------------------------------------------------------
+migrate-db:
+  stage: migrate-db
+  image: ${FLYWAY_IMAGE}
+  <<: *aws-auth
+  script:
+    - echo "Running Flyway migrate against ${FLYWAY_URL}"
+    - flyway -configFiles="${FLYWAY_CONFIG_FILE}" info   # Log pending migrations
+    - flyway -configFiles="${FLYWAY_CONFIG_FILE}" migrate
+  rules:
+    # On merge to main — when SQL migration files changed
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - exchange-platform/database/migrations/**/*.sql
+    # Also allow manual trigger for emergency hotfixes
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  environment:
+    name: production
+  # Prevent concurrent migrations racing against each other
+  resource_group: database-migrations
+
+# ------------------------------------------------------------------------------
+# STAGE: build — Notification Service
+# Triggers when notification service source or its migration script changes.
+# spring.flyway.enabled=false — pipeline owns schema, not the app.
+# ------------------------------------------------------------------------------
+build:notification-service:
+  stage: build
+  image: gradle:8-jdk21
+  script:
+    - cd exchange-platform/services/internal/notification-service
+    - ./gradlew :service:build -x test
+        -Dspring.flyway.enabled=false
+  artifacts:
+    paths:
+      - exchange-platform/services/internal/notification-service/service/build/libs/*.jar
+    expire_in: 1 hour
+  cache:
+    key: gradle-notification-service
+    paths:
+      - .gradle/
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - exchange-platform/services/internal/notification-service/**/*
+        - exchange-platform/database/migrations/**/*
+
+# ------------------------------------------------------------------------------
+# STAGE: test — Notification Service
+# ------------------------------------------------------------------------------
+test:notification-service:
+  stage: test
+  image: gradle:8-jdk21
+  script:
+    - cd exchange-platform/services/internal/notification-service
+    - ./gradlew :service:test -Dspring.flyway.enabled=false
+  artifacts:
+    when: always
+    reports:
+      junit: exchange-platform/services/internal/notification-service/service/build/test-results/test/TEST-*.xml
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - exchange-platform/services/internal/notification-service/**/*
+
+# ------------------------------------------------------------------------------
+# STAGE: deploy — Notification Service (EKS via Helm)
+# Depends on migrate-db completing first (stage ordering enforces this).
+# ------------------------------------------------------------------------------
+deploy:notification-service:
+  stage: deploy
+  image: dtzar/helm-kubectl:3.14
+  <<: *aws-auth
+  script:
+    - aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_DEFAULT_REGION"
+    - helm upgrade --install notification-service
+        exchange-platform/services/internal/notification-service/infrastructure/helm/notification-service
+        --namespace internal
+        --set image.tag="${CI_COMMIT_SHORT_SHA}"
+        --wait
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - exchange-platform/services/internal/notification-service/**/*
+        - exchange-platform/database/migrations/**/*
+  environment:
+    name: production
+  needs:
+    - job: migrate-db
+      optional: true   # Deploy can proceed if migrate-db was skipped (no SQL changes)
+    - job: build:notification-service
+    - job: test:notification-service
+
+# ------------------------------------------------------------------------------
+# STAGE: build — Validation Engine
+# Builds the Spring Boot JAR and Docker image, then pushes to ECR.
+# spring.flyway.enabled=false — pipeline owns schema, not the app.
+# ------------------------------------------------------------------------------
+build:validation-engine:
+  stage: build
+  image: gradle:8-jdk21
+  services:
+    - docker:dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
+    ECR_REPO: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/validation-engine
+  <<: *aws-auth
+  script:
+    - cd exchange-platform/services/internal/validation-engine
+    # Build the JAR
+    - ./gradlew clean bootJar -x test -Dspring.flyway.enabled=false
+    # Authenticate Docker to ECR
+    - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REPO"
+    # Build and push the image, tagged with the commit SHA
+    - docker build -t "${ECR_REPO}:${CI_COMMIT_SHORT_SHA}" -t "${ECR_REPO}:latest" .
+    - docker push "${ECR_REPO}:${CI_COMMIT_SHORT_SHA}"
+    - docker push "${ECR_REPO}:latest"
+  cache:
+    key: gradle-validation-engine
+    paths:
+      - .gradle/
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - exchange-platform/services/internal/validation-engine/**/*
+        - exchange-platform/database/migrations/**/*
+
+# ------------------------------------------------------------------------------
+# STAGE: test — Validation Engine
+# ------------------------------------------------------------------------------
+test:validation-engine:
+  stage: test
+  image: gradle:8-jdk21
+  script:
+    - cd exchange-platform/services/internal/validation-engine
+    - ./gradlew test -Dspring.flyway.enabled=false
+  artifacts:
+    when: always
+    reports:
+      junit: exchange-platform/services/internal/validation-engine/build/test-results/test/TEST-*.xml
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - exchange-platform/services/internal/validation-engine/**/*
+
+# ------------------------------------------------------------------------------
+# STAGE: deploy — Validation Engine (EKS via Terraform)
+# Passes the new ECR image tag into Terraform via TF_VAR, then applies.
+# Depends on migrate-db completing first (stage ordering enforces this).
+# ------------------------------------------------------------------------------
+deploy:validation-engine:
+  stage: deploy
+  image:
+    name: hashicorp/terraform:1.8
+    entrypoint: [""]
+  <<: *aws-auth
+  variables:
+    TF_VAR_image_tag: ${CI_COMMIT_SHORT_SHA}
+    TF_VAR_aws_region: ${AWS_DEFAULT_REGION}
+    # Terraform state stored in S3 backend (configured in terraform/backend.tf)
+  script:
+    - cd exchange-platform/services/internal/validation-engine/terraform
+    - terraform init -reconfigure
+    - terraform plan -out=tfplan
+    - terraform apply -auto-approve tfplan
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - exchange-platform/services/internal/validation-engine/**/*
+        - exchange-platform/database/migrations/**/*
+  environment:
+    name: production
+  needs:
+    - job: migrate-db
+      optional: true   # Deploy can proceed if migrate-db was skipped (no SQL changes)
+    - job: build:validation-engine
+    - job: test:validation-engine
