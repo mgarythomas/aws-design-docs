@@ -45,6 +45,10 @@ For each `fr:relevant`, `xxf:relevant`, or `bind` with `relevant` attribute:
 - Any `xf:itemset` or dynamic option sources
 - External service calls or resource elements
 
+### 8. Embedded SQL
+- Any 'Select' or other sql commands found in the definitions
+- Extract tables and attributes
+
 ## Output format
 
 Produce a Markdown document with one H2 section per category above.
