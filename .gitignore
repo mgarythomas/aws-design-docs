@@ -1,3 +1,4 @@
 services/node_modules
 web-ui/node_modules
 web-ui/.next
+docs/beyondtrust-nexus-integration.md
