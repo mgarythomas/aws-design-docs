@@ -1,450 +1,419 @@
-# Strategic Architecture and Implementation Framework
-## Secure Multi-Tier Cloud Platform on AWS — Architecture Review
+# AWS Platform Architecture Review & Implementation Guide
+## Digital Tenant · SDLC (Dev / QA / UAT / Prod) · Transit Gateway Topology
+
+## Summary Assessment
+The architecture adopts defence-in-depth correctly with a DMZ / Internal account boundary, PrivateLink for AWS service traffic, and GuardDuty malware scanning for untrusted uploads. Transit Gateway replaces the DMZ-to-Internal VPC Peering connection, providing a scalable hub-and-spoke routing model across all SDLC environments with per-environment isolation enforced at the TGW route table level.
+
+| Domain | Status | Key Finding |
+|---|---|---|
+| **Multi-account boundary model** | APPROVED | DMZ / Internal account separation is correct. Non-overlapping CIDRs are mandatory for TGW. |
+| **DMZ-to-Internal connectivity** | UPDATED | Transit Gateway replaces VPC Peering 2. TGW route tables enforce env-to-env isolation. |
+| **Network VPC-to-DMZ peering** | APPROVED | VPC Peering Connection 1 (F5 -> DMZ) is retained. Simple point-to-point; TGW not required here. |
+| **Private API Gateway routing** | REVISE | NLB 1 + execute-api VPC Endpoint are required for cross-VPC API ingress. A VPC Link + NLB 2 are required for proxying from API Gateway to the EKS backend. See Section 4A. |
+| **GuardDuty malware scan workflow** | APPROVED | S3 tag-based quarantine with EventBridge promotion is compliant and recommended. |
+| **KMS / JWKS key rotation** | APPROVED | Dual-key JWKS with 24 h grace and 48 h deletion schedule is correct. Authorizer in-memory caching is required. |
+| **Runtime versions** | CONFIRMED | Java 25 OpenJDK LTS (GA September 2025) and Node.js 24. AWS Corretto 25 and EKS AMI compatibility must be confirmed before production rollout. |
+| **EKS Flyway migration pattern** | APPROVED | Kubernetes Job pre-deployment with DDL/DML privilege separation is the correct pattern. |
+| **IaC / SSM parameter sharing** | APPROVED | SSM-driven cross-repo parameter sharing decouples foundation infra from application release cycles. |
 
 ---
 
-## Table of Contents
+# 1. How the Architecture Works — End to End
+This section walks through every layer of the platform in the order traffic traverses it, from the public internet to the Aurora database.
 
-1. [Architectural Philosophy](#architectural-philosophy)
-2. [Multi-Account Governance](#multi-account-governance)
-3. [Service Integration Design Patterns](#service-integration-design-patterns)
-4. [Secure Connectivity — PrivateLink Infrastructure](#secure-connectivity)
-5. [Internal Tier — Business Logic Core](#internal-tier)
-6. [Identity and Zero Trust Authorisation](#identity-and-zero-trust)
-7. [EKS Configuration](#eks-configuration)
-8. [Secrets Management](#secrets-management)
-9. [Observability and OpenTelemetry](#observability)
-10. [Data Resilience and Caching](#data-resilience)
-11. [CI/CD and Policy-as-Code](#cicd)
-12. [Regional Constraints — Australia Only](#regional-constraints)
-13. [Disaster Recovery](#disaster-recovery)
-14. [Architecture Review Findings](#architecture-review-findings)
+## 1.0 Overall Network Flow Diagram
+The following network diagram illustrates the end-to-end traffic flow from external clients, traversing the DMZ security boundaries via both the Public API Gateway and the NodeJS application (Next.js), through the Transit Gateway (TGW) to the Private API Gateway, EKS backend pods, and database layer:
 
----
+```mermaid
+graph TD
+    subgraph Public_Internet ["Public Internet"]
+        Client[External Client]
+        Imperva[Imperva CDN & DDoS Edge]
+        Client -->|HTTPS| Imperva
+    end
 
-## 1. Architectural Philosophy {#architectural-philosophy}
+    subgraph Network_VPC ["Network VPC (Shared Network Account)"]
+        subgraph Net_Native ["AWS Native / Shared Infrastructure"]
+            F5[F5 BIG-IP Appliance]
+        end
+        Imperva --> F5
+    end
 
-The foundational principle of this architecture is the **Proxy-Service Pattern**, which establishes a clear functional and security boundary between ingress orchestration and core data processing. A DMZ VPC handles initial traffic termination; an Internal VPC serves as the source of truth.
+    subgraph DMZ_VPC ["DMZ VPC (Digital Tenant DMZ Account)"]
+        subgraph DMZ_Tenant_Workloads ["Digital Tenant Workloads"]
+            NextJS[Next.js Pods<br/>NodeJS Frontend]
+            APIGW_DMZ[Public API Gateway]
+            S3_DMZ[DMZ Upload S3 Bucket]
+        end
+        
+        subgraph DMZ_Native ["AWS Native / Platform Services"]
+            ALB_DMZ[DMZ ALB]
+            VPCE_DMZ[VPC Interface Endpoints<br/>S3, ECR, events]
+        end
+        
+        F5 -->|VPC Peering 1| ALB_DMZ
+        F5 -->|VPC Peering 1| APIGW_DMZ
+        ALB_DMZ --> NextJS
+        NextJS -.-> VPCE_DMZ
+    end
 
-This segregation is physically enforced through AWS network isolation, identity-based access controls, and private connectivity mechanisms that prevent direct routing between untrusted environments and the data layer.
+    subgraph Transit_Gateway ["Transit Gateway (Shared Network Account)"]
+        TGW[TGW / Route Tables]
+        NextJS -->|Traffic to Internal API| TGW
+        APIGW_DMZ -->|Traffic to Internal API| TGW
+    end
 
-The implementation follows a four-tier account strategy — Development, QA, UAT, and Production — ensuring environmental parity throughout the SDLC. Within each account, the dual-VPC strategy provides a secondary layer of defence.
+    subgraph Internal_VPC ["Internal VPC (Digital Tenant Internal Account)"]
+        subgraph Int_Tenant_Workloads ["Digital Tenant Workloads"]
+            EKS_INT[EKS Cluster<br/>Spring Boot Pods]
+            APIGW_INT[Private API Gateway]
+        end
+        
+        subgraph Int_Native ["AWS Native / Platform Services"]
+            NLB_1[NLB 1<br/>execute-api front]
+            VPCE_INT[execute-api VPC Endpoint ENIs]
+            VPCLink[VPC Link]
+            NLB_2[NLB 2<br/>EKS backend - IP Target Mode]
+            RDSP[RDS Proxy]
+            Aurora[(Aurora Postgres)]
+            VPCE_INT_Shared[VPC Interface Endpoints<br/>KMS, SSM, Secrets Mgr]
+        end
+        
+        TGW --> NLB_1
+        NLB_1 --> VPCE_INT
+        VPCE_INT --> APIGW_INT
+        APIGW_INT --> VPCLink
+        VPCLink --> NLB_2
+        NLB_2 -->|Direct IP Routing| EKS_INT
+        EKS_INT --> RDSP
+        RDSP --> Aurora
+        EKS_INT -.-> VPCE_INT_Shared
+    end
 
-### Conceptual Architecture
+    subgraph On_Premises ["On-Premises"]
+        FR[ForgeRock IDP]
+        EKS_INT -->|Direct Connect / VPN| FR
+    end
 
+    %% Apply Classes for Tenant vs Native
+    class NextJS,APIGW_DMZ,S3_DMZ,EKS_INT,APIGW_INT tenant;
+    class F5,ALB_DMZ,VPCE_DMZ,TGW,NLB_1,VPCE_INT,VPCLink,NLB_2,RDSP,Aurora,VPCE_INT_Shared native;
+
+    classDef tenant fill:#ffe6cc,stroke:#d79b00,stroke-width:2px,color:#000;
+    classDef native fill:#dae8fc,stroke:#6c8ebf,stroke-width:1px,color:#000;
 ```
-User/Client
-    │
-    ▼
-AWS WAF
-    │
-    ▼
-Public API Gateway (DMZ VPC)
-    ├──► Next.js 16 (Node.js 20.9+)
-    └──► TS Orchestration Lambda
-              │
-              ▼ HTTPS via PrivateLink
-        Interface VPC Endpoint (DMZ)
-              │
-              ▼
-        Internal API Gateway (Internal VPC)
-              │
-         ┌────┴────┐
-         ▼         ▼
-   VPC Link     TS Lambda
-         │
-         ▼
-  Spring Boot 4 / Java 25 (EKS)
-         │
-    ┌────┴────┐
-    ▼         ▼
-  RDS     ElastiCache
-        (Aurora PG)  (Valkey)
 
-Async path:
-  TS Lambda ──► DMZ EventBridge ──► Internal EventBridge ──► SQS ──► TS Lambda
-```
+## 1.1 Edge — Imperva CDN & DDoS Scrubbing
+All inbound HTTPS traffic from the internet first hits Imperva. Imperva applies WAF rules, scrubs DDoS traffic, and caches static content. Clean traffic is forwarded to the F5 BIG-IP in the Network VPC.
 
----
+> **Team obligation**
+> - Configure Imperva to forward the original client IP via `X-Forwarded-For`. Without this, access logs show only Imperva IP ranges.
+> - Restrict F5 inbound ACL to Imperva egress IP ranges only. No other source should reach F5 directly.
 
-## 2. Multi-Account Governance {#multi-account-governance}
+## 1.2 Network VPC — F5 BIG-IP TLS Termination
+The F5 terminates TLS, applies network policy, and forwards traffic over VPC Peering Connection 1 into the DMZ VPC. This peering link is the only entry point into the AWS workload boundary from the on-premises network.
 
-Managed via AWS Organizations. Each environment is a discrete account for billing isolation, service quota separation, and blast-radius containment.
+> **Team obligation**
+> - VPC Peering Connection 1 requires explicit route table entries in both the Network VPC and DMZ VPC.
+> - Security Groups on the DMZ ALB must restrict inbound to the F5 private IP range — not the entire Network VPC CIDR.
 
-| Environment | Account Type  | DMZ VPC CIDR  | Internal VPC CIDR | Primary Objective                                  |
-|-------------|---------------|---------------|-------------------|----------------------------------------------------|
-| Development | Sandbox/Build | 10.0.0.0/16   | 10.10.0.0/16      | Rapid iteration, component testing, integration    |
-| QA          | Testing/STG   | 10.1.0.0/16   | 10.11.0.0/16      | Automated regression, functional and security scan |
-| UAT         | Pre-Prod      | 10.2.0.0/16   | 10.12.0.0/16      | User acceptance, performance tuning, final staging |
-| Production  | Live Core     | 10.3.0.0/16   | 10.13.0.0/16      | Critical business operations and live data         |
+## 1.3 DMZ VPC — ALB, Next.js, and File Uploads
+Traffic arrives at the DMZ Application Load Balancer. The AWS Load Balancer Controller in the DMZ EKS cluster manages ALB listener rules from Kubernetes Ingress resources. Next.js pods serve the frontend application. File uploads from the browser are written directly to the DMZ S3 bucket, keeping untrusted binary content outside the Internal VPC until GuardDuty has scanned it.
 
-Every component must be deployed across at least three Availability Zones with automated health checks and failover mechanisms to achieve the 99.99% availability target.
+> **Team obligation**
+> - Install the AWS Load Balancer Controller via Helm in the DMZ EKS cluster. Bind its service account via IRSA.
+> - Apply the DMZ S3 bucket policy denying `GetObject` unless the `GuardDutyMalwareScanStatus` tag equals `NO_THREAT_FOUND`.
+> - Enable GuardDuty Malware Protection for S3 on the DMZ account — this must be enabled per-account.
 
----
+## 1.4 DMZ-to-Internal Connectivity — Transit Gateway
+Transit Gateway (TGW) replaces VPC Peering Connection 2. Both the DMZ VPC and Internal VPC attach to the TGW. Routing between them is controlled by TGW route tables, which enforce environment isolation — a Prod Internal VPC cannot be reached from a Dev DMZ VPC.
 
-## 3. Service Integration Design Patterns {#service-integration-design-patterns}
+> **TGW route table isolation pattern**
+> - Create one TGW route table per environment (e.g., `tgw-rt-dev`, `tgw-rt-qa`, `tgw-rt-uat`, `tgw-rt-prod`).
+> - Associate each environment's DMZ and Internal VPC attachments with their respective route table only.
+> - Add propagation entries: DMZ VPC attachment propagates its CIDR to the env route table, and Internal VPC attachment propagates its CIDR to the same env route table.
+> - Do NOT add cross-environment propagations. A Dev DMZ VPC should never have a route to the Prod Internal VPC CIDR.
 
-All asynchronous EventBridge interactions are mediated by a Lambda function. DMZ presentation logic resides in Next.js 16 (Node.js 20.9+); internal logic uses Spring Boot 4 with Java 25 or TypeScript Lambdas.
+## 1.5 Internal VPC — Private API Gateway & Spring Boot EKS
+Traffic from DMZ EKS pods travels over TGW to the Internal VPC, where it is received by **NLB 1** (execute-api front) that fronts the `execute-api` VPC Endpoint. The VPC Endpoint proxies traffic to the Private API Gateway, which enforces resource policies and routes to Spring Boot microservices in the Internal EKS cluster via a VPC Link pointing to **NLB 2** (EKS backend).
 
-### Pattern 1 — Public API with External Client
+> **Team obligation**
+> - The Private API Gateway resource policy must restrict access to the specific `execute-api` VPC Endpoint ID.
+> - The `execute-api` VPC Endpoint Security Group must allow inbound HTTPS (443) from the DMZ VPC CIDR only.
+> - Spring Boot pods must authenticate to RDS Proxy via IRSA — no static DB credentials in config or Kubernetes Secrets.
+> - Deploy and manage **NLB 2** (EKS backend) using the AWS Load Balancer Controller with IP target mode (Option B) to forward traffic directly to Spring Boot pods.
 
-**Flow:** External Client → AWS WAF → Public API Gateway (DMZ)
+## 1.6 Data Layer — RDS Proxy & Aurora PostgreSQL
+Spring Boot pods connect to Aurora PostgreSQL via RDS Proxy. The proxy pools connections and enforces IAM authentication. Aurora subnets are fully isolated — no route table entries to TGW, VPC Peering, or NAT Gateways.
 
-A TS Lambda Authorizer validates the ForgeRock JWT and evaluates Cedar policies before proxying to downstream compute.
+> **Team obligation**
+> - Aurora subnet route tables must contain no entries to TGW or internet. Reachable only from the Internal VPC Private App subnets.
+> - Enable RDS Proxy IAM authentication. Disable password-based authentication on the proxy.
+> - Flyway DDL migrations run as a Kubernetes Job before service deployment, using high-privilege credentials from Secrets Manager.
 
-### Pattern 2 — Internal API Consumed from Public API
-
-**Variant A (Simple Proxy):** Public API Gateway → Interface VPC Endpoint → Internal API Gateway
-
-**Variant B (With Orchestration):** Public API Gateway → TS Orchestration Lambda → Interface VPC Endpoint → Internal API Gateway. The Lambda handles multi-call aggregation or data scrubbing.
-
-### Pattern 3 — Internal API Implementation
-
-- **Containerised:** Internal API Gateway → VPC Link → Spring Boot 4 (Java 25) on EKS
-- **Serverless:** Internal API Gateway → TS Lambda
-
-### Patterns 4 and 5 — API to EventBridge (Lambda-Mediated)
-
-**Flow:** API Gateway → TS Lambda → EventBridge
-
-A TS Lambda acts as the producer to avoid complex VTL mapping. The Lambda receives the API request, optionally enriches the payload, and calls `events:PutEvents` via the AWS SDK.
-
-### Pattern 6 — EventBridge to EventBridge (Cross-VPC)
-
-**Flow:** DMZ EventBridge Bus → EventBridge Rule → Internal EventBridge Bus
-
-The Internal bus resource policy must permit `events:PutEvents` from the DMZ account.
-
-### Pattern 7 — EventBridge to SQS to Lambda (Reliable Async)
-
-**Flow:** EventBridge Rule → SQS Queue → TS Lambda
-
-SQS acts as a durable buffer. The consumer Lambda polls with a configured batch size and retry policy to absorb event volume spikes.
+## 1.7 On-Premises — ForgeRock IDP
+The Authorisation Service in the Internal EKS cluster queries ForgeRock IDP on-premises for token validation. Connectivity uses a Virtual Private Gateway (VGW) or Direct Connect Gateway (DXGW) attached to the Internal VPC. Route 53 Outbound Resolvers forward ForgeRock DNS queries to on-premises DNS servers over this link.
 
 ---
 
-## 4. Secure Connectivity — PrivateLink Infrastructure {#secure-connectivity}
+# 2. Transit Gateway — Detailed Design
 
-VPC Peering and Transit Gateways are explicitly rejected for the DMZ-to-Internal path. AWS PrivateLink is used exclusively.
+## 2.1 TGW Architecture Overview
+One Transit Gateway is deployed per AWS region (`ap-southeast-2` primary). All environment VPCs attach to this shared TGW. Routing isolation is enforced by per-environment TGW route tables rather than by separate TGW instances.
 
-### Interface VPC Endpoints and Private DNS
+| Component | Location | Count | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Transit Gateway** | ap-southeast-2 | 1 | Regional hub. Shared across all environments. |
+| **TGW VPC Attachment — DMZ** | Per environment | 4 (one per env) | Attaches each env DMZ VPC to TGW. |
+| **TGW VPC Attachment — Internal** | Per environment | 4 (one per env) | Attaches each env Internal VPC to TGW. |
+| **TGW Route Table** | TGW (logical) | 4 (one per env) | Isolates routing to same-environment attachments only. |
 
-The Internal API Gateway is configured as a **Private** API. An Interface VPC Endpoint for `com.amazonaws.<region>.execute-api` is created in the DMZ VPC subnets. DNS resolution is managed through Route 53 Private Hosted Zones associated with both VPCs, resolving a custom internal domain (e.g. `api.internal.platform.com`) to the private ENI IPs in the DMZ.
+## 2.2 TGW Route Table Design
+Each environment gets its own TGW route table. Attachments are associated with and propagate routes into their environment-specific table only. This is the enforcement mechanism for environment isolation.
 
-### Performance Specifications
+*   **Example: Dev environment TGW route table (`tgw-rt-dev`)**
+    *   **Associated attachments:** Dev DMZ VPC attachment, Dev Internal VPC attachment.
+    *   **Route propagations:** Dev DMZ VPC CIDR (e.g. `10.10.0.0/20`) propagated from DMZ attachment. Dev Internal VPC CIDR (e.g. `10.10.16.0/20`) propagated from Internal attachment.
+    *   **Result:** Dev DMZ can reach Dev Internal and vice versa. Neither can reach QA, UAT, or Prod VPCs.
+    *   The QA, UAT, and Prod route tables follow the same pattern with their own CIDRs and attachments.
 
-| Metric       | Target                | Rationale                                      |
-|--------------|-----------------------|------------------------------------------------|
-| Throughput   | 10 Gbps (scale-out)   | Supports high-volume financial transactions    |
-| Latency      | < 5ms P99             | Minimises overhead of cross-VPC calls          |
-| Security Group | Port 443 ingress only | Restricts attack surface to encrypted traffic |
-| NACLs        | Subnet-level filtering | Secondary defence layer for ENIs              |
+## 2.3 VPC Route Table Updates for TGW
+Each VPC that attaches to TGW must update its route tables to send cross-VPC traffic to the TGW attachment. Existing local VPC routes are unaffected.
 
-ENIs are deployed across multiple Availability Zones to match the DMZ compute footprint. The unidirectional nature of PrivateLink means the Internal VPC has no inherent path to initiate connections back to the DMZ unless separately configured.
+| VPC / Subnet | Destination CIDR | Target | Notes |
+| :--- | :--- | :--- | :--- |
+| **Dev DMZ — Private Subnets** | `10.10.16.0/20` (Dev Internal) | `tgw-xxxxxxxxx` | Routes Internal-bound traffic to TGW |
+| **Dev Internal — App Subnets** | `10.10.0.0/20` (Dev DMZ) | `tgw-xxxxxxxxx` | Routes return traffic back to DMZ via TGW |
+| **Dev Internal — DB Subnets** | `(none)` | `(none)` | Isolated. No route to TGW or internet. |
+| **QA / UAT / Prod** | Same pattern per env | `tgw-xxxxxxxxx` | Repeat for each environment's CIDRs. |
 
----
+## 2.4 CIDR Planning
+Non-overlapping CIDRs are mandatory for TGW to function. The TGW will not accept an attachment from a VPC whose CIDR overlaps with any other attached VPC. Suggested allocation for 8 VPCs across 4 environments:
 
-## 5. Internal Tier — Business Logic Core {#internal-tier}
-
-### Private API Gateway and Authorisation
-
-The Internal API Gateway accepts traffic only through the VPC Endpoint established in the DMZ. A Lambda Authorizer enforces Zero Trust at this boundary — every request must carry a valid ForgeRock identity token and a service-to-service credential. The authorizer uses Cedar policy evaluation to confirm the specific operation is permitted for that user on that resource.
-
-> **Note:** Cedar policy enforcement is applied at the API Gateway Lambda Authorizer layer only. There is no Cedar sidecar pattern in EKS pods.
-
-### Spring Boot Microservices on EKS
-
-Core business logic runs in Spring Boot 4 microservices on a dedicated EKS cluster in the Internal VPC. Services are deployed into private subnets with no route to an Internet Gateway, receiving traffic through an Internal NLB integrated with the Private API Gateway via a VPC Link.
-
-Java 25 virtual threads (Project Loom) are leveraged for high-performance concurrent processing.
-
-### RDS Data Access
-
-The Aurora PostgreSQL instance resides in a dedicated Data Subnet. Security Group rules permit connections on the database port only from EKS node groups and data-access Lambdas. IAM Database Authentication replaces long-lived passwords with short-lived tokens. Direct RDS access from the DMZ is prohibited.
-
----
-
-## 6. Identity and Zero Trust Authorisation {#identity-and-zero-trust}
-
-### ForgeRock — Authentication and JWT Issuance
-
-ForgeRock is the central Identity Provider. It manages user directories, MFA, and issues OIDC JWTs with cryptographically signed claims covering identity, roles, and organisational context. API Gateway Lambda Authorizers verify token signatures using ForgeRock's JWKS endpoint.
-
-### Cedar — Policy-as-Code
-
-Cedar externalises authorisation logic, allowing security teams to update permissions without service redeployment. Every authorisation decision maps the request to Cedar entities: Principal, Action, and Resource.
-
-Cedar policies are managed in a dedicated repository with CI/CD pipelines performing syntactic validation and unit testing against simulated requests before deployment.
+| Environment | VPC | Suggested CIDR | Notes |
+| :--- | :--- | :--- | :--- |
+| **Dev** | DMZ | `10.10.0.0/20` | 4096 IPs |
+| **Dev** | Internal | `10.10.16.0/20` | 4096 IPs |
+| **QA** | DMZ | `10.10.32.0/20` | 4096 IPs |
+| **QA** | Internal | `10.10.48.0/20` | 4096 IPs |
+| **UAT** | DMZ | `10.10.64.0/20` | 4096 IPs |
+| **UAT** | Internal | `10.10.80.0/20` | 4096 IPs |
+| **Prod** | DMZ | `10.10.96.0/20` | 4096 IPs |
+| **Prod** | Internal | `10.10.112.0/20` | 4096 IPs |
 
 ---
 
-## 7. EKS Configuration {#eks-configuration}
+# 3. VPC Endpoints — Required Configuration
+VPC Endpoints keep AWS service API traffic within the AWS backbone. Without them, traffic from EKS pods to S3, ECR, KMS, and EventBridge exits to the internet through NAT Gateways — unacceptable for a financial services workload.
 
-### Cluster Architecture
+| Endpoint | DMZ VPC | Internal VPC | Purpose |
+| :--- | :--- | :--- | :--- |
+| **S3 Gateway Endpoint** | Required | Required | ECR image layers, S3 object storage. Free. Add to route tables. |
+| **ecr.api** (Interface) | Required | Required | ECR control plane — auth token, image manifest. |
+| **ecr.dkr** (Interface) | Required | Required | Docker image layer pull. |
+| **kms** (Interface) | Not required | Required | JWKS signing key operations, KMS encrypt/decrypt. |
+| **execute-api** (Interface) | Not required | Required | Private API Gateway access point. Fronted by **NLB 1** for TGW path. |
+| **events** (Interface) | Required | Required | EventBridge event publishing from microservices. |
+| **ssm / ssmmessages** (Interface) | Required | Required | SSM parameter reads, Systems Manager Session Manager. |
+| **secretsmanager** (Interface) | Optional | Required | Flyway migration credentials, RDS Proxy secrets. |
 
-- **Regions:** `ap-southeast-2` (Sydney) primary, `ap-southeast-4` (Melbourne) for DR
-- **Availability Zones:** ap-southeast-2a, 2b, 2c — three AZs minimum
-- **API server endpoint:** Private only — no public endpoint. `kubectl` access via AWS Systems Manager Session Manager or bastion within the VPC
-- **Kubernetes version:** Latest supported EKS release on the standard support track
+---
 
-### Node Group Strategy
+# 4. Accuracy Issues Requiring Correction
 
-#### System Node Group
+## 4A CRITICAL: Private API Gateway Routing
+### Finding — REVISE REQUIRED
+The original document states that deploying a VPC Endpoint (execute-api) 'eliminates the administrative overhead and cost of configuring an NLB or VPC Link'. This is incorrect.
 
-Runs cluster-critical workloads only.
+A VPC Interface Endpoint in the Internal VPC creates ENIs with private IPs in that VPC. When traffic arrives from the DMZ via TGW, it targets those ENI IPs. AWS does not automatically resolve Private API Gateway endpoint DNS names across a TGW boundary — the DNS response from the Internal VPC's execute-api endpoint is not visible to the DMZ VPC without additional configuration.
 
-| Parameter       | Value                                              |
-|-----------------|----------------------------------------------------|
-| Instance type   | m7i.large                                          |
-| Minimum nodes   | 1 per AZ (3 total)                                 |
-| Taint           | `CriticalAddonsOnly=true:NoSchedule`               |
-| Workloads       | CoreDNS, AWS Load Balancer Controller, ADOT DaemonSet, Karpenter |
+The correct and supported pattern is:
+**DMZ EKS pods -> TGW -> Internal NLB 1 (execute-api front) -> execute-api VPC Endpoint ENI IPs -> Private API Gateway**
 
-#### Application Node Group
+### Required Implementation (execute-api Front — NLB 1)
+1.  **Deploy the execute-api Interface VPC Endpoint** in the Internal VPC. Note the ENI private IPs assigned to each AZ subnet.
+2.  **Deploy an internal-facing NLB (NLB 1 — execute-api front)** in the Internal VPC Private App subnets. Add a TCP/443 listener forwarding to a target group of the execute-api endpoint ENI IPs (target type: IP).
+3.  **DNS:** Create an alias A record in the Route 53 Private Hosted Zone pointing the internal service name at the NLB 1 DNS name. Associate the PHZ with both Internal VPC and DMZ VPC.
+4.  **DMZ EKS pods** resolve the internal service name via Route 53 -> get the NLB 1 IP -> traffic routes over TGW -> NLB 1 -> execute-api endpoint -> Private API Gateway.
+5.  **Set the Private API Gateway resource policy** to allow invocations from the execute-api VPC Endpoint ID only.
 
-Runs Spring Boot services and data Lambda-equivalent workloads.
+> **Cost implication**
+> Internal NLB 1: ~USD $0.008/LCU-hour + $0.0065/GB processed. This cost is unavoidable if cross-boundary Private API Gateway access is required without an internet-facing path.
 
-| Parameter       | Value                                              |
-|-----------------|----------------------------------------------------|
-| Instance type   | m7i.xlarge or m8g.xlarge (Graviton 4 — evaluate for cost/perf) |
-| Minimum nodes   | 2 per AZ (6 total)                                 |
-| Maximum nodes   | 10 per AZ                                          |
-| Capacity type   | On-demand only                                     |
-| Workloads       | Spring Boot 4 microservices, data-access services  |
+### EKS Backend Routing — NLB with IP Targets (Option B — Recommended)
+For routing from the Private API Gateway to the Spring Boot pods in the Internal EKS cluster, a separate NLB (**NLB 2 — EKS backend**) and a VPC Link are required.
 
-> **Graviton note:** `m8g` instances are available in Sydney and deliver meaningful cost/performance improvement for Java workloads. Spring Boot on Java 21+ runs well on ARM64. Requires multi-arch container image builds in the CI/CD pipeline.
-
-### Autoscaling
-
-**Karpenter** is used in preference to the legacy Cluster Autoscaler.
-
-- `NodePool` per tier with approved instance families and AZ spread requirements
-- `limits` set on total CPU and memory to prevent runaway scaling costs
-- `disruption` policy: `WhenUnderutilized` with `consolidateAfter: 5m`
-- **HPA** on Spring Boot deployments: CPU utilisation target 65%, with custom metrics from the OTel pipeline via the external metrics adapter
-
-### Networking
-
-**VPC CNI** with **prefix delegation** enabled. This increases pod density from approximately 30 to approximately 110 pods per `m7i.xlarge` node. Subnet CIDR sizing must account for peak pod count before deployment — this cannot be changed without re-provisioning subnets.
-
-**NodeLocalDNSCache** add-on enabled to reduce DNS query latency under load. Spring Boot services with connection pooling generate high DNS traffic at startup.
-
-**Network Policies** are enforced via the native VPC CNI network policy controller (no Calico required). Default-deny ingress and egress on all application namespaces, with explicit allow rules:
-
-| Source            | Destination          | Port  | Direction |
-|-------------------|----------------------|-------|-----------|
-| Spring Boot pods  | Aurora PostgreSQL     | 5432  | Egress    |
-| Spring Boot pods  | ElastiCache Valkey    | 6379  | Egress    |
-| NLB Security Group | Spring Boot pods    | 8080  | Ingress   |
-| ADOT collector    | OTel endpoint        | 4317  | Egress    |
-| All other         | All                  | Any   | Deny      |
-
-### Load Balancer Integration
-
-The AWS Load Balancer Controller (installed on the system node group) manages NLB lifecycle via Kubernetes Service annotations.
-
-- NLB scheme: `internal`
-- NLB target type: **IP mode** (pod IPs direct, bypassing kube-proxy iptables)
-- Integration path: Internal API Gateway → VPC Link → NLB → Kubernetes Service → Spring Boot pod
-
-IP mode target groups require prefix delegation to be enabled on the VPC CNI.
-
-### Pod Security
-
-**Pod Security Admission (PSA)** enforced at `restricted` profile on all application namespaces.
-
-Required container configuration:
-
+The AWS Load Balancer Controller (already deployed in the Internal EKS cluster for this architecture) provisions and manages **NLB 2** directly from a Kubernetes Service of type `LoadBalancer` with the following annotations:
 ```yaml
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  readOnlyRootFilesystem: true
-  allowPrivilegeEscalation: false
-  seccompProfile:
-    type: RuntimeDefault
-  capabilities:
-    drop: ["ALL"]
+metadata:
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
 ```
+The NLB targets pod IPs directly, bypassing the node hop entirely. The controller keeps target group registrations in sync as pods scale up and down.
 
-> **Alpine image note:** Alpine defaults to root. All Dockerfiles must include an explicit `USER 1000` (or equivalent named non-root user). Spring Boot processes must write only to designated `emptyDir` or mounted volumes — not to the root filesystem. Validate with `docker run --read-only` locally before pushing to any environment.
+**Benefits:**
+*   **Lower latency** — no inter-node hop (bypasses kube-proxy iptables).
+*   **Cleaner Security Groups** — inbound only from NLB 2 to the pod CIDR on the service port.
+*   **Internal-facing** — NLB 2 is internal-facing (no internet exposure).
+*   **Direct Health Checks** — Health checks go directly to the pod's Spring Boot Actuator readiness endpoint (`/actuator/health/readiness`).
 
-### Namespace Strategy
+This is the recommended pattern for EKS workloads with the Load Balancer Controller already in place.
 
-| Namespace      | Contents                              | ResourceQuota |
-|----------------|---------------------------------------|---------------|
-| `system`       | Karpenter, LBC, ADOT, CoreDNS         | Conservative  |
-| `api-services` | Spring Boot microservices             | Per workload  |
-| `data-services`| Data-access Lambdas, batch processors | Per workload  |
+### Where ALB Fits in this Architecture
+ALB is the right choice at the DMZ boundary — the DMZ ALB sits in front of the Next.js pods and is managed by the Load Balancer Controller via Kubernetes Ingress resources. ALB gives you path-based routing, header inspection, and WAF integration, which are valuable at the edge. Inside the Internal VPC, those capabilities are handled by the Private API Gateway itself, so there is no role for an ALB there.
 
-Apply `LimitRange` objects per namespace to enforce default CPU/memory requests and limits, preventing noisy-neighbour contention.
+### The Two-NLB Distinction
+The architecture implements two separate NLBs serving distinct purposes:
 
----
-
-## 8. Secrets Management {#secrets-management}
-
-Secrets management uses a dual-strategy approach.
-
-### Boundary Definition
-
-| Secret Type                        | Store                  |
-|------------------------------------|------------------------|
-| AWS-native credentials (RDS, MSK)  | AWS Secrets Manager    |
-| RDS credential rotation            | AWS Secrets Manager (native rotation Lambda) |
-| Application secrets (API keys, tokens, Vault-managed PKI) | HashiCorp Vault |
-| Spring Boot application config     | Vault via Vault Agent sidecar or CSI Secrets Store driver |
-
-### Vault Integration on EKS
-
-The **Vault Agent Sidecar Injector** or **Secrets Store CSI Driver** (with the Vault provider) are the two integration options for delivering secrets to Spring Boot pods. The CSI driver is preferred for new deployments as it avoids a sidecar container per pod and delivers secrets as projected volumes with automatic rotation.
-
-Vault must be accessible from the Internal VPC — either as a managed service endpoint reachable via PrivateLink, or self-hosted on EKS in a dedicated `vault` namespace with strict NetworkPolicy isolation.
+| NLB | Purpose | Target |
+| :--- | :--- | :--- |
+| **NLB 1** — execute-api front | Receives traffic from DMZ via TGW, forwards to execute-api VPC Endpoint ENIs | execute-api endpoint ENI IPs |
+| **NLB 2** — EKS backend | Receives traffic from Private API Gateway via VPC Link, forwards to Spring Boot pods | EKS pod IPs (IP target mode) |
 
 ---
 
-## 9. Observability and OpenTelemetry {#observability}
-
-### OpenTelemetry Integration
-
-The platform connects to the organisation's existing OpenTelemetry implementation. The integration path uses **AWS Distro for OpenTelemetry (ADOT)**.
-
-**EKS:** ADOT deployed as a DaemonSet on the system node group. Spring Boot services emit traces and metrics to the local ADOT collector via OTLP on `localhost:4317`. The collector exports to the existing OTel endpoint.
-
-**Lambda:** The ADOT Lambda layer handles trace propagation automatically for TS Lambda Authorizers and service Lambdas.
-
-**Trace continuity:** The `traceparent` header must be forwarded through all API Gateway integrations (both Public and Internal) to maintain end-to-end trace correlation from the WAF edge to the Spring Boot pod and back.
-
-### Pipeline
-
-```
-Spring Boot (OTLP → localhost:4317)
-    │
-    ▼
-ADOT DaemonSet (per node)
-    │
-    ▼
-[Existing OTel endpoint / Collector gateway]
-```
-
-### Additional Observability Components
-
-| Component          | Purpose                                               |
-|--------------------|-------------------------------------------------------|
-| AWS CloudTrail     | API-level audit across all accounts — mandatory for financial services compliance |
-| Amazon GuardDuty   | Threat detection — enable EKS Runtime Monitoring add-on |
-| AWS Security Hub   | Aggregated security posture across accounts           |
-| CloudWatch Logs    | Structured JSON application logs, replicated to centralised Logging Account |
-| CloudWatch Alarms  | Metric-based alerting on SLO breach thresholds        |
-
-All application logs must emit structured JSON with a consistent schema to enable SIEM correlation. Define and enforce a log schema standard across all services before go-live.
+## 4B Java 25 OpenJDK LTS & Node 24 — Confirmed Runtimes
+### Decisions confirmed:
+*   **Java 25 OpenJDK LTS (GA September 2025):** Confirmed target runtime for Spring Boot backend services. Before rolling out to production node groups, confirm AWS Corretto 25 availability in `ap-southeast-2`, EKS optimised AMI support, and Spring Boot 3.x dependency compatibility validated in Dev. Set `spring.threads.virtual.enabled=true` in all Spring Boot application configurations to leverage Virtual Threads (Project Loom).
+*   **Node.js 24:** Confirmed runtime for DMZ Edge Lambdas and internal TypeScript functions, matching local build and deployment configurations.
 
 ---
 
-## 10. Data Resilience and Caching {#data-resilience}
-
-### ElastiCache for Valkey
-
-Valkey (open-source Redis fork) deployed in the Internal VPC as the primary caching layer for session state and read-heavy lookup data.
-
-- Secured with RBAC and IAM Authentication
-- Accessible only to authorised EKS node groups and Lambdas via Security Group rules
-- Deployed across three AZs
-
-### Aurora PostgreSQL
-
-- Multi-AZ deployment with automated failover
-- IAM Database Authentication — no long-lived passwords
-- **RDS Proxy** should be deployed in front of Aurora to manage connection pooling for Spring Boot pod scaling events. Without RDS Proxy, connection exhaustion during scaling is a known failure mode.
-- Automated backups with a retention period aligned to regulatory requirements
+## 4C MINOR: AWS Region Placeholder in OpenAPI Examples
+The OpenAPI YAML examples reference `us-east-1` in Lambda ARNs and NLB hostnames. All ARNs and endpoint URIs must use `ap-southeast-2` (Sydney primary). Correct this before committing OpenAPI specs to the repository.
 
 ---
 
-## 11. CI/CD and Policy-as-Code {#cicd}
+# 5. Step-by-Step Implementation Guide
+Execute steps in sequence. Each step writes outputs to SSM Parameter Store for consumption by subsequent steps.
 
-The entire platform is defined in Terraform. Pipelines include static analysis steps for security misconfiguration scanning.
+### Step 1: AWS Account Structure & CIDR Allocation
+Confirm or create the account structure: one Network account, one DMZ account per environment, one Internal account per environment (9 accounts total across 4 SDLC environments).
+Assign unique non-overlapping CIDRs per the table in Section 2.4. Record all VPC IDs and CIDRs.
+*   **⚠ Do not proceed until the CIDR plan is peer-reviewed.** TGW will reject attachments from VPCs with overlapping CIDRs and the condition cannot be corrected without destroying and re-creating VPCs.
 
-Cedar policies are managed in a separate repository with pipelines that perform syntactic validation and unit testing against simulated user requests before deployment.
+### Step 2: Transit Gateway Deployment
+Deploy the Transit Gateway in the primary region (`ap-southeast-2`) from the Network account or a dedicated networking account. Enable DNS support and default route table association must be **DISABLED** — you will manage route tables explicitly.
+Create four TGW route tables: `tgw-rt-dev`, `tgw-rt-qa`, `tgw-rt-uat`, `tgw-rt-prod`.
+Create TGW VPC attachments for each DMZ and Internal VPC (8 attachments total). Use at least two AZ subnets per attachment for resilience.
+Associate each attachment with its environment-specific route table only.
+Enable route propagation per environment: Dev DMZ and Dev Internal attachments propagate into `tgw-rt-dev` only. Repeat for QA, UAT, Prod.
+Update subnet route tables in each VPC: add a route for the peer environment CIDR pointing at the TGW attachment ID.
+*   **✓ Validate:** Send a test packet from a Dev DMZ EC2 instance to a Dev Internal private IP. Confirm it arrives. Confirm a packet from Dev DMZ to QA Internal is dropped.
 
-Container image pipelines must support multi-arch builds (amd64 and arm64) if Graviton instances are adopted for the application node group.
+### Step 3: VPC Peering Connection 1 (Network VPC to DMZ VPCs)
+Create VPC Peering connections between the Network VPC (F5) and each environment's DMZ VPC (4 peering connections).
+Update route tables in both directions: Network VPC routes DMZ CIDRs via the peering connection. DMZ VPC routes Network VPC CIDR via the peering connection.
+Restrict DMZ ALB Security Groups: inbound 443 from F5 private IPs only.
+*   **✓ Validate:** Confirm traffic from F5 reaches the DMZ ALB and gets a response.
+
+### Step 4: VPC Endpoints
+Deploy all endpoints in Section 3 using Terraform. For S3, use a Gateway Endpoint and add it to the relevant route tables. For all Interface Endpoints, enable private DNS.
+Create Security Groups for Interface Endpoints. Allow inbound 443 from the respective VPC CIDR. For the execute-api endpoint, also allow inbound 443 from the DMZ VPC CIDR (traffic arrives via TGW).
+*   **⚠ Private DNS must be enabled on Interface Endpoints or AWS SDK calls will resolve public endpoints and traffic will exit via NAT Gateway.**
+
+### Step 5: Private API Gateway — NLB 1 & execute-api Endpoint
+Deploy the `execute-api` Interface VPC Endpoint in the Internal VPC. Note the ENI private IPs for each AZ.
+Deploy an internal-facing NLB (**NLB 1 — execute-api front**) in the Internal VPC App subnets. Listener: TCP/443. Target group: IP type, targeting the execute-api ENI IPs.
+Deploy the Private API Gateway. Set a resource policy allowing invocations only from the `execute-api` VPC Endpoint ID.
+Create a Route 53 A record alias in the Private Hosted Zone (`internal.digital.local`) pointing the API service name at the NLB 1 DNS name.
+Associate the PHZ with both Internal VPC and DMZ VPC.
+*   **✓ Validate:** From a DMZ EKS pod, resolve the internal API DNS name — it should return the NLB 1 IP. Then invoke the API endpoint and confirm a 200 response from the Private API Gateway.
+
+### Step 6: DNS — Route 53 PHZ & Outbound Resolvers
+Route 53 PHZ (`internal.digital.local`): created in Step 5. Confirm association with both VPCs is in place.
+Route 53 Outbound Resolver: deploy in the Internal VPC. Create a forwarding rule for the on-premises ForgeRock domain (e.g., `identity.corp.onprem`) pointing to the on-premises DNS server IP reachable over Direct Connect or VPN.
+*   **✓ Validate:** From an Internal EKS pod, run `nslookup` against the ForgeRock hostname and confirm it resolves to an on-premises IP.
+
+### Step 7: EKS Clusters — DMZ & Internal
+Deploy EKS clusters via Terraform. Use managed node groups. Place nodes in Private Subnets.
+*   **DMZ cluster:** Install AWS Load Balancer Controller via Helm with IRSA.
+*   **Internal cluster:** Configure IRSA for all service accounts. Key roles: Authorisation Service (KMS + JWKS S3), Spring Boot pods (RDS Proxy IAM auth), Flyway Job (Secrets Manager + DDL DB user).
+*   Set `spring.threads.virtual.enabled=true` in all Spring Boot application configuration.
+*   Use Distroless or Alpine base images. Scan all images with Amazon Inspector on push to ECR.
+*   **EKS Backend NLB (NLB 2):** Deploy a Kubernetes Service of type `LoadBalancer` annotated for the AWS Load Balancer Controller with IP target mode (Option B):
+    ```yaml
+    metadata:
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "external"
+        service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+        service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
+    ```
+*   **Private API Gateway VPC Link:** Create the VPC Link in the Private API Gateway pointing to the provisioned NLB 2 DNS name to route traffic directly to the pod IP target group.
+*   **⚠ Java 25 OpenJDK LTS (GA September 2025) and Node.js 24 are the confirmed targets. Confirm AWS Corretto 25 and EKS AMI support in Dev before rolling to QA and production node groups.**
+
+### Step 8: GuardDuty Malware Protection & File Promotion
+Enable GuardDuty Malware Protection for S3 on the DMZ account. Associate it with the DMZ upload S3 bucket.
+Apply the bucket policy denying `s3:GetObject` unless object tag `GuardDutyMalwareScanStatus = NO_THREAT_FOUND`.
+Create two EventBridge rules on GuardDuty findings: one for clean files (trigger file promotion Lambda) and one for infected files (trigger SNS security alert).
+The file-promotion Lambda copies the clean object to the Internal S3 bucket and deletes the DMZ source object.
+*   **✓ Validate:** Upload an EICAR test file and a clean file. Confirm the clean file is promoted to Internal S3 and EICAR triggers an SNS alert.
+
+### Step 9: KMS JWKS Key Rotation
+Create the first KMS asymmetric signing key (`ECC_NIST_P384`). Store the key ID in SSM.
+Deploy the JWKS endpoint Lambda serving the public key set at a well-known URL. The endpoint reads the current and previous public keys from KMS.
+Deploy the rotation Lambda on a 24-hour EventBridge schedule: create new key, add to JWKS, keep previous key for 24 h grace, schedule deletion of keys older than 48 h.
+Configure the API Gateway Lambda Authorizer to cache JWKS keys in memory with a 5-15 minute TTL.
+*   **✓ Validate:** Issue a token, rotate the key, confirm token is still accepted during grace window and rejected after 48 h.
+
+### Step 10: Aurora PostgreSQL, RDS Proxy & Flyway
+Deploy Aurora PostgreSQL in Isolated subnets (no route to TGW or internet).
+Deploy RDS Proxy in Private App subnets. Enable IAM authentication. Disable password-based access on the proxy.
+Create two DB users: migration user (DDL: `CREATE`, `ALTER`, `DROP`) and application user (DML only: `SELECT`, `INSERT`, `UPDATE`, `DELETE`).
+Store migration user credentials in Secrets Manager with automatic rotation enabled.
+Package Flyway migration scripts as a Kubernetes Job image. The Job retrieves credentials from Secrets Manager via IRSA and runs before each service deployment.
+*   **✓ Validate:** Confirm application pods can connect to the proxy endpoint and cannot connect directly to Aurora cluster endpoint. Run a migration Job and confirm schema changes are applied.
+
+### Step 11: CI/CD & IaC Governance
+Common Infrastructure Repo: manages VPCs, TGW, Peering Connection 1, EKS cluster foundations. Pipeline writes all output resource IDs to SSM Parameter Store on successful apply.
+Service Repos: read VPC IDs, Subnet IDs, TGW IDs, Security Group IDs from SSM — never hardcode resource IDs.
+Helm chart deployments triggered by GitLab CI/CD or ArgoCD after Terraform apply.
+Enforce GitLab branch protection on `main`. SonarQube scan must pass for Java, TypeScript, and Python services.
+*   **✓ Validate end-to-end:** Trigger a full deployment pipeline from a clean environment. Confirm all SSM reads succeed and no hardcoded resource IDs appear in Terraform plans.
 
 ---
 
-## 12. Regional Constraints — Australia Only {#regional-constraints}
+# 6. Resolved Architectural Decisions
+The following decisions have been confirmed and are reflected throughout this document. They are recorded here for audit and onboarding purposes.
 
-All workloads must operate within Australian AWS regions.
-
-| Region             | Code              | Role             |
-|--------------------|-------------------|------------------|
-| Sydney             | ap-southeast-2    | Primary (active) |
-| Melbourne          | ap-southeast-4    | DR (warm standby) |
-
-### Melbourne Service Catalogue Validation
-
-`ap-southeast-4` has a smaller service catalogue than Sydney. Before committing Melbourne as a DR target, validate availability of every platform component:
-
-| Service                    | Sydney | Melbourne     |
-|----------------------------|--------|---------------|
-| EKS                        | ✓      | ✓             |
-| Aurora PostgreSQL          | ✓      | ✓             |
-| ElastiCache (Valkey)       | ✓      | Verify        |
-| AWS PrivateLink endpoints  | ✓      | Partial       |
-| AWS Secrets Manager        | ✓      | ✓             |
-| EventBridge                | ✓      | Verify        |
-| Interface VPC Endpoints    | ✓      | Reduced catalogue |
+| # | Decision | Resolution | Owner |
+|---|---|---|---|
+| **D1** | Ownership of the Transit Gateway and all TGW route tables. | Networks team. All route table changes (new attachments, propagation updates, cross-env routes) require a Networks team change request. | Networks |
+| **D2** | DMZ-to-Internal VPC connectivity model. | Transit Gateway replaces VPC Peering Connection 2. One TGW per region with per-environment route tables for isolation. | Platform Engineering |
+| **D3** | Ownership of Imperva CDN/DDoS and F5 BIG-IP configuration. | Cyber and Networks teams. New DMZ ALB targets and any Imperva/F5 policy changes require a joint change request to both teams. | Cyber / Networks |
+| **D4** | ForgeRock IDP on-premises connectivity. | Out of scope for this initiative. The Authorisation Service integration with ForgeRock is deferred to a separate workstream. | TBD |
+| **D5** | Shared Services VPC (centralised logging, Vault, Nexus). | Out of scope for this initiative. TGW route table design accommodates a future Shared Services attachment without rework. | TBD |
+| **D6** | Target runtime versions. | Java 25 OpenJDK LTS (GA September 2025) and Node.js 24. Confirm AWS Corretto 25 availability and EKS AMI compatibility in Dev before production rollout. | Platform Engineering |
 
 ---
 
-## 13. Disaster Recovery {#disaster-recovery}
+# 7. Open Questions for the Team
+All previously identified open questions have been resolved and recorded in Section 6. No outstanding questions remain for this initiative at this time.
 
-DR posture must be defined before production go-live.
-
-### Recommended Posture
-
-**Tier:** Warm standby (Sydney active, Melbourne passive)
-
-- Aurora Global Database replicates from Sydney to Melbourne with sub-second RPO
-- Validate cross-region replication latency between ap-southeast-2 and ap-southeast-4 against Aurora Global Database SLA
-- Route 53 health check-based failover for DNS cutover
-- EKS cluster pre-provisioned in Melbourne at minimum node count (scale up on failover event)
-- ElastiCache in Melbourne is a cold start — session state is non-persistent across a failover event; design application sessions accordingly
-
-### RTO/RPO Targets
-
-Define and agree RTO/RPO targets per environment tier before finalising the DR architecture. Suggested starting position for production:
-
-| Metric | Target      |
-|--------|-------------|
-| RPO    | < 1 minute  |
-| RTO    | < 30 minutes |
+### Action required — Java 25 rollout validation
+Java 25 OpenJDK LTS (GA September 2025) is the confirmed target. Before rolling out beyond Dev, the team must confirm:
+1.  AWS Corretto 25 is available in `ap-southeast-2` and the required EKS optimised AMI is published.
+2.  Spring Boot 3.x dependency compatibility has been validated in a Dev environment.
+3.  Container base images are updated from Java 21 to Java 25 and re-scanned via Amazon Inspector.
+*   Once confirmed in Dev, promote to QA then UAT before Prod node group rollout.
 
 ---
 
-## 14. Architecture Review Findings {#architecture-review-findings}
-
-### Summary
-
-| Domain                      | Status         | Notes                                                      |
-|-----------------------------|----------------|------------------------------------------------------------|
-| Network / VPC design        | Strong         | DMZ + Internal split via PrivateLink is correct            |
-| Identity and authorisation  | Strong         | ForgeRock + Cedar at API Gateway layer is the right model  |
-| Technology versions         | Accepted       | Java 25, Spring Boot 4, Next.js 16 treated as roadmap targets — document current fallback baselines |
-| Availability and resiliency | Needs detail   | Add RDS Proxy, RTO/RPO targets, AZ failover runbooks       |
-| Secrets management          | Addressed      | Secrets Manager + Vault dual-strategy confirmed            |
-| Disaster recovery           | Needs detail   | Melbourne DR catalogue validation required                 |
-| Observability               | Needs detail   | OTel integration confirmed; CloudTrail and GuardDuty to be added |
-| EKS configuration           | Addressed      | See Section 7 for full specification                       |
-
-### Open Actions
-
-1. Lock current technology baselines (Java 21 LTS, Spring Boot 3.x, Next.js 14/15) as the build baseline while Java 25 / Spring Boot 4 remain pre-release.
-2. Validate Melbourne (`ap-southeast-4`) service catalogue against every platform component before committing to DR architecture.
-3. Define RTO/RPO targets for production — required for Aurora Global Database sizing and EKS Melbourne pre-provisioning decisions.
-4. Add RDS Proxy to the Aurora connectivity design to prevent connection exhaustion during pod scaling events.
-5. Define and publish a structured log schema standard for SIEM integration before go-live.
-6. Confirm Vault deployment model — managed endpoint via PrivateLink or self-hosted on EKS — and complete the Secrets Store CSI Driver integration design.
-7. Validate Alpine Dockerfile compliance with restricted PSA: `USER 1000`, `readOnlyRootFilesystem`, write paths limited to declared volumes.
-8. Enable CloudTrail across all accounts (including non-production) and route to the centralised Logging Account.
+# 8. Compliance Alignment Notes
+Relevant to APRA CPS 234 and ISO 27001 obligations for this environment.
+*   **Network segmentation (CPS 234 §36):** The DMZ / Internal account boundary with TGW route-table-enforced isolation satisfies the requirement for logical separation by information sensitivity. Document the TGW route table design and CIDR plan in the network architecture register.
+*   **Encryption in transit (CPS 234 §38):** TLS termination at Imperva/F5, re-encryption within the AWS backbone via PrivateLink, and TGW encryption in transit (enabled by default for inter-VPC traffic). Ensure EKS pod-to-pod internal traffic uses mTLS.
+*   **Key management (ISO 27001 A.10.1):** KMS ECC_NIST_P384 rotation with 48-hour deletion window is compliant. Key custodian and rotation approval workflow must be documented.
+*   **Vulnerability management (CPS 234 §37):** GuardDuty Malware Protection on DMZ S3 satisfies the requirement for malware detection on externally received files. EventBridge quarantine workflow must be tested annually.
+*   **Privileged access (ISO 27001 A.9.2):** Flyway DDL/DML privilege separation ensures application pods never hold schema-altering credentials. Secrets Manager rotation for the migration user must be enabled.
 
 ---
 
-*Document version: 1.1 — Incorporates architecture review findings, EKS detailed configuration, regional constraints, and updated secrets and observability posture.*
+# 9. Document Sign-Off
+| Role | Name | Date |
+|---|---|---|
+| **Principal AWS Architect** | | |
+| **Engineering Lead** | | |
+| **Security Architect** | | |
