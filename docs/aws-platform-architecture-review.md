@@ -77,6 +77,7 @@ graph TD
                 VPCLink[VPC Link ENIs]
                 NLB_2[NLB 2<br/>EKS backend - IP Target Mode]
                 EKS_INT[EKS Cluster<br/>Spring Boot Pods]
+                Int_Lambdas[Internal Lambdas<br/>TypeScript Compute]
                 File_Promo_Lambda[File Promotion Lambda]
                 RDSP[RDS Proxy]
                 VPCE_INT_Shared[VPC Endpoints<br/>S3 Gateway, EventBridge, KMS, Secrets Mgr]
@@ -85,7 +86,9 @@ graph TD
                 VPCLink --> NLB_2
                 NLB_2 -->|Direct IP Routing| EKS_INT
                 EKS_INT --> RDSP
+                Int_Lambdas --> RDSP
                 EKS_INT -.-> VPCE_INT_Shared
+                Int_Lambdas -.-> VPCE_INT_Shared
                 File_Promo_Lambda -.-> VPCE_INT_Shared
             end
             
@@ -110,6 +113,7 @@ graph TD
     APIGW_DMZ -->|Direct Route via TGW| TGW
     VPCE_INT -->|AWS PrivateLink Routing| APIGW_INT
     APIGW_INT -->|Integration Proxy| VPCLink
+    APIGW_INT -->|Direct Lambda Integration| Int_Lambdas
     
     %% S3 & EventBridge connections
     VPCE_DMZ -->|Read/Write S3| S3_DMZ
@@ -120,7 +124,7 @@ graph TD
     VPCE_INT_Shared -->|Store Clean File| S3_INT
 
     %% Apply Classes for Tenant vs Native
-    class NextJS,APIGW_DMZ,EKS_INT,APIGW_INT,DMZ_Lambdas,File_Promo_Lambda tenant;
+    class NextJS,APIGW_DMZ,EKS_INT,APIGW_INT,DMZ_Lambdas,File_Promo_Lambda,Int_Lambdas tenant;
     class F5,ALB_DMZ,VPCE_DMZ,TGW,NLB_1,VPCE_INT,VPCLink,NLB_2,RDSP,Aurora,VPCE_INT_Shared,EB_DMZ,EB_INT,S3_DMZ,S3_INT native;
 
     classDef tenant fill:#ffe6cc,stroke:#d79b00,stroke-width:2px,color:#000;
@@ -152,14 +156,15 @@ All inbound HTTPS traffic from the internet first hits Imperva. Imperva applies 
 > - Restrict F5 inbound ACL to Imperva egress IP ranges only. No other source should reach F5 directly.
 
 ## 1.2 Network VPC — F5 BIG-IP TLS Termination
-The F5 terminates TLS, applies network policy, and forwards traffic over VPC Peering Connection 1 into the DMZ VPC. This peering link is the only entry point into the AWS workload boundary from the on-premises network.
+The F5 terminates TLS, applies network policy, and forwards traffic. Web frontend traffic is routed over VPC Peering Connection 1 into the DMZ VPC (targeting the DMZ ALB), while API traffic is routed over HTTPS to the Public API Gateway (AWS Regional Service Network). This setup makes the F5 the single ingress security boundary.
 
 > **Team obligation**
 > - VPC Peering Connection 1 requires explicit route table entries in both the Network VPC and DMZ VPC.
 > - Security Groups on the DMZ ALB must restrict inbound to the F5 private IP range — not the entire Network VPC CIDR.
+> - The Public API Gateway resource policy must restrict traffic ingress exclusively to the public NAT Gateway IPs / Egress IPs of the F5 BIG-IP network layer.
 
 ## 1.3 DMZ VPC — ALB, Next.js, and File Uploads
-Traffic arrives at the DMZ Application Load Balancer. The AWS Load Balancer Controller in the DMZ EKS cluster manages ALB listener rules from Kubernetes Ingress resources. Next.js pods serve the frontend application. File uploads from the browser are written directly to the DMZ S3 bucket, keeping untrusted binary content outside the Internal VPC until GuardDuty has scanned it.
+Traffic arrives at the DMZ Application Load Balancer. The AWS Load Balancer Controller in the DMZ EKS cluster manages ALB listener rules from Kubernetes Ingress resources. Next.js pods serve the frontend application. File uploads from the browser are written directly to the DMZ Upload S3 bucket (which sits in the AWS Regional Service Network outside the VPC, accessed privately via the S3 Gateway Endpoint), keeping untrusted binary content outside the Internal VPC until GuardDuty has scanned it.
 
 > **Team obligation**
 > - Install the AWS Load Balancer Controller via Helm in the DMZ EKS cluster. Bind its service account via IRSA.
@@ -176,12 +181,12 @@ Transit Gateway (TGW) replaces VPC Peering Connection 2. Both the DMZ VPC and In
 > - Do NOT add cross-environment propagations. A Dev DMZ VPC should never have a route to the Prod Internal VPC CIDR.
 
 ## 1.5 Internal VPC — Private API Gateway & Spring Boot EKS
-Traffic from DMZ EKS pods travels over TGW to the Internal VPC, where it is received by **NLB 1** (execute-api front) that fronts the `execute-api` VPC Endpoint. The VPC Endpoint proxies traffic to the Private API Gateway, which enforces resource policies and routes to Spring Boot microservices in the Internal EKS cluster via a VPC Link pointing to **NLB 2** (EKS backend).
+Traffic from DMZ EKS pods and DMZ Validation/Orchestration Lambdas travels over TGW to the Internal VPC, where it is received by **NLB 1** (execute-api front) that fronts the `execute-api` VPC Endpoint. The VPC Endpoint proxies traffic to the Private API Gateway. For containerised services, the Private API Gateway routes requests to EKS Spring Boot backend pods via a VPC Link pointing to **NLB 2** (EKS backend). For serverless workloads, the Private API Gateway integrates directly with internal TypeScript Lambdas located in the Internal VPC App subnets.
 
 > **Team obligation**
 > - The Private API Gateway resource policy must restrict access to the specific `execute-api` VPC Endpoint ID.
-> - The `execute-api` VPC Endpoint Security Group must allow inbound HTTPS (443) from the DMZ VPC CIDR only.
-> - Spring Boot pods must authenticate to RDS Proxy via IRSA — no static DB credentials in config or Kubernetes Secrets.
+> - The `execute-api` VPC Endpoint Security Group must allow inbound HTTPS (443) from the DMZ VPC CIDR only (which includes both DMZ EKS nodes and DMZ Lambda CIDRs).
+> - Spring Boot pods and internal Lambdas must authenticate to RDS Proxy via IAM Database Authentication / IRSA.
 > - Deploy and manage **NLB 2** (EKS backend) using the AWS Load Balancer Controller with IP target mode (Option B) to forward traffic directly to Spring Boot pods.
 
 ## 1.6 Data Layer — RDS Proxy & Aurora PostgreSQL
@@ -386,10 +391,10 @@ Deploy EKS clusters via Terraform. Use managed node groups. Place nodes in Priva
 *   **⚠ Java 25 OpenJDK LTS (GA September 2025) and Node.js 24 are the confirmed targets. Confirm AWS Corretto 25 and EKS AMI support in Dev before rolling to QA and production node groups.**
 
 ### Step 8: GuardDuty Malware Protection & File Promotion
-Enable GuardDuty Malware Protection for S3 on the DMZ account. Associate it with the DMZ upload S3 bucket.
-Apply the bucket policy denying `s3:GetObject` unless object tag `GuardDutyMalwareScanStatus = NO_THREAT_FOUND`.
-Create two EventBridge rules on GuardDuty findings: one for clean files (trigger file promotion Lambda) and one for infected files (trigger SNS security alert).
-The file-promotion Lambda copies the clean object to the Internal S3 bucket and deletes the DMZ source object.
+Enable GuardDuty Malware Protection for S3 on the DMZ account. Associate it with the DMZ Upload S3 bucket (AWS Regional Service Network).
+Apply the S3 bucket policy denying `s3:GetObject` unless object tag `GuardDutyMalwareScanStatus = NO_THREAT_FOUND`.
+Create two EventBridge rules on the default DMZ EventBridge Bus: one for clean files (cross-account route to the Internal EventBridge Bus, triggering the File Promotion Lambda) and one for infected files (trigger SNS security alert).
+The File Promotion Lambda (running in the Internal VPC) copies the clean object from the DMZ Upload S3 bucket to the Internal S3 bucket via the S3 Gateway Endpoints and deletes the DMZ source object.
 *   **✓ Validate:** Upload an EICAR test file and a clean file. Confirm the clean file is promoted to Internal S3 and EICAR triggers an SNS alert.
 
 ### Step 9: KMS JWKS Key Rotation
