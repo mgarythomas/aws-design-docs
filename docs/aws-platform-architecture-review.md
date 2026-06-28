@@ -21,73 +21,81 @@ The architecture adopts defence-in-depth correctly with a DMZ / Internal account
 # 1. How the Architecture Works — End to End
 This section walks through every layer of the platform in the order traffic traverses it, from the public internet to the Aurora database.
 
-## 1.0 Overall Network Flow Diagram
-The following network diagram illustrates the end-to-end traffic flow from external clients, traversing the DMZ security boundaries via both the Public API Gateway and the NodeJS application (Next.js), through the Transit Gateway (TGW) to the Private API Gateway, EKS backend pods, and database layer:
+## 1.0 Overall Network Flow Diagram & Logical Concepts
+The following network diagram illustrates the end-to-end traffic flow from external clients, traversing the logical boundaries of the AWS Public/Service networks and the customer's private VPC spaces:
 
 ```mermaid
 graph TD
-    subgraph Public_Internet ["Public Internet"]
+    subgraph Client_Space ["Public Internet & Client Space"]
         Client[External Client]
         Imperva[Imperva CDN & DDoS Edge]
         Client -->|HTTPS| Imperva
     end
 
-    subgraph Network_VPC ["Network VPC (Shared Network Account)"]
-        subgraph Net_Native ["AWS Native / Shared Infrastructure"]
-            F5[F5 BIG-IP Appliance]
-        end
-        Imperva --> F5
-    end
-
-    subgraph DMZ_VPC ["DMZ VPC (Digital Tenant DMZ Account)"]
-        subgraph DMZ_Tenant_Workloads ["Digital Tenant Workloads"]
-            NextJS[Next.js Pods<br/>NodeJS Frontend]
+    subgraph AWS_Service_Network ["AWS Regional Service Network (Outside Customer VPCs)"]
+        subgraph Native_APIGW ["AWS-Managed Serverless Services"]
             APIGW_DMZ[Public API Gateway]
-            S3_DMZ[DMZ Upload S3 Bucket]
-        end
-        
-        subgraph DMZ_Native ["AWS Native / Platform Services"]
-            ALB_DMZ[DMZ ALB]
-            VPCE_DMZ[VPC Interface Endpoints<br/>S3, ECR, events]
-        end
-        
-        F5 -->|VPC Peering 1| ALB_DMZ
-        F5 -->|VPC Peering 1| APIGW_DMZ
-        ALB_DMZ --> NextJS
-        NextJS -.-> VPCE_DMZ
-    end
-
-    subgraph Transit_Gateway ["Transit Gateway (Shared Network Account)"]
-        TGW[TGW / Route Tables]
-        NextJS -->|Traffic to Internal API| TGW
-        APIGW_DMZ -->|Traffic to Internal API| TGW
-    end
-
-    subgraph Internal_VPC ["Internal VPC (Digital Tenant Internal Account)"]
-        subgraph Int_Tenant_Workloads ["Digital Tenant Workloads"]
-            EKS_INT[EKS Cluster<br/>Spring Boot Pods]
             APIGW_INT[Private API Gateway]
+            EB_DMZ[DMZ EventBridge Bus]
+            EB_INT[Internal EventBridge Bus]
+            S3_DMZ[DMZ Upload S3 Bucket]
+            S3_INT[Internal S3 Bucket]
         end
-        
-        subgraph Int_Native ["AWS Native / Platform Services"]
-            NLB_1[NLB 1<br/>execute-api front]
-            VPCE_INT[execute-api VPC Endpoint ENIs]
-            VPCLink[VPC Link]
-            NLB_2[NLB 2<br/>EKS backend - IP Target Mode]
-            RDSP[RDS Proxy]
-            Aurora[(Aurora Postgres)]
-            VPCE_INT_Shared[VPC Interface Endpoints<br/>KMS, SSM, Secrets Mgr]
+    end
+
+    subgraph Tenant_Tenancy ["Customer Tenancy (Digital Account VPC Space)"]
+        subgraph Network_VPC ["Network VPC (Shared Network Account)"]
+            subgraph Net_Native ["AWS Native / Shared Infrastructure"]
+                F5[F5 BIG-IP Appliance]
+            end
+            Imperva --> F5
         end
-        
-        TGW --> NLB_1
-        NLB_1 --> VPCE_INT
-        VPCE_INT --> APIGW_INT
-        APIGW_INT --> VPCLink
-        VPCLink --> NLB_2
-        NLB_2 -->|Direct IP Routing| EKS_INT
-        EKS_INT --> RDSP
-        RDSP --> Aurora
-        EKS_INT -.-> VPCE_INT_Shared
+
+        subgraph DMZ_VPC ["DMZ VPC (Digital Tenant DMZ Account)"]
+            subgraph DMZ_VPC_Private ["DMZ VPC Private Subnets"]
+                ALB_DMZ[DMZ ALB]
+                NextJS[Next.js Pods<br/>NodeJS Frontend]
+                DMZ_Lambdas[DMZ Lambdas<br/>Validation & Orchestration]
+                VPCE_DMZ[VPC Endpoints<br/>S3 Gateway, EventBridge, ECR]
+                
+                ALB_DMZ --> NextJS
+                NextJS -.-> VPCE_DMZ
+                DMZ_Lambdas -.-> VPCE_DMZ
+            end
+        end
+
+        subgraph Transit_Gateway ["Transit Gateway (Shared Network Account)"]
+            TGW[TGW / Route Tables]
+            NextJS -->|Web Frontend API Calls| TGW
+            DMZ_Lambdas -->|Lambda API Proxying| TGW
+        end
+
+        subgraph Internal_VPC ["Internal VPC (Digital Tenant Internal Account)"]
+            subgraph Internal_VPC_Private ["Internal VPC App Subnets"]
+                NLB_1[NLB 1<br/>execute-api front]
+                VPCE_INT[execute-api VPC Endpoint ENIs]
+                VPCLink[VPC Link ENIs]
+                NLB_2[NLB 2<br/>EKS backend - IP Target Mode]
+                EKS_INT[EKS Cluster<br/>Spring Boot Pods]
+                File_Promo_Lambda[File Promotion Lambda]
+                RDSP[RDS Proxy]
+                VPCE_INT_Shared[VPC Endpoints<br/>S3 Gateway, EventBridge, KMS, Secrets Mgr]
+                
+                NLB_1 --> VPCE_INT
+                VPCLink --> NLB_2
+                NLB_2 -->|Direct IP Routing| EKS_INT
+                EKS_INT --> RDSP
+                EKS_INT -.-> VPCE_INT_Shared
+                File_Promo_Lambda -.-> VPCE_INT_Shared
+            end
+            
+            subgraph Internal_VPC_DB ["Internal VPC Database Subnets"]
+                Aurora[(Aurora Postgres)]
+                RDSP --> Aurora
+            end
+            
+            TGW --> NLB_1
+        end
     end
 
     subgraph On_Premises ["On-Premises"]
@@ -95,13 +103,46 @@ graph TD
         EKS_INT -->|Direct Connect / VPN| FR
     end
 
+    %% Ingress and Egress connections between VPCs and Regional Services
+    F5 -->|VPC Peering 1| ALB_DMZ
+    F5 -->|HTTPS API Routing| APIGW_DMZ
+    APIGW_DMZ -->|Integration Proxy| DMZ_Lambdas
+    APIGW_DMZ -->|Direct Route via TGW| TGW
+    VPCE_INT -->|AWS PrivateLink Routing| APIGW_INT
+    APIGW_INT -->|Integration Proxy| VPCLink
+    
+    %% S3 & EventBridge connections
+    VPCE_DMZ -->|Read/Write S3| S3_DMZ
+    VPCE_DMZ -->|PutEvents| EB_DMZ
+    EB_DMZ -->|Cross-Account Event Route| EB_INT
+    EB_INT -->|Trigger| File_Promo_Lambda
+    VPCE_INT_Shared -->|Copy File| S3_DMZ
+    VPCE_INT_Shared -->|Store Clean File| S3_INT
+
     %% Apply Classes for Tenant vs Native
-    class NextJS,APIGW_DMZ,S3_DMZ,EKS_INT,APIGW_INT tenant;
-    class F5,ALB_DMZ,VPCE_DMZ,TGW,NLB_1,VPCE_INT,VPCLink,NLB_2,RDSP,Aurora,VPCE_INT_Shared native;
+    class NextJS,APIGW_DMZ,EKS_INT,APIGW_INT,DMZ_Lambdas,File_Promo_Lambda tenant;
+    class F5,ALB_DMZ,VPCE_DMZ,TGW,NLB_1,VPCE_INT,VPCLink,NLB_2,RDSP,Aurora,VPCE_INT_Shared,EB_DMZ,EB_INT,S3_DMZ,S3_INT native;
 
     classDef tenant fill:#ffe6cc,stroke:#d79b00,stroke-width:2px,color:#000;
     classDef native fill:#dae8fc,stroke:#6c8ebf,stroke-width:1px,color:#000;
 ```
+
+### Logical Architecture Concepts Explained
+To ensure absolute architectural rigor, this diagram separates concepts that are often conflated:
+
+1. **Tenancy vs. Account:** 
+   * **Tenancy** represents the corporate boundaries (e.g., Digital Tenant). 
+   * **AWS Accounts** enforce strict administrative boundaries (e.g., Shared Network Account vs. Digital Tenant DMZ and Internal Accounts). A single tenant spans multiple accounts to limit the blast radius.
+
+2. **VPC Boundaries vs. AWS Regional Services:**
+   * **VPC Boundaries (Private Network Space):** Only components with private IP addresses allocated directly from the VPC CIDR (such as EKS Nodes, EC2 instances, DB instances, Load Balancer ENIs, and Interface VPC Endpoint ENIs) reside within the private subnets.
+   * **AWS Regional Service Network (Outside VPCs):** Native AWS serverless services (such as Public/Private API Gateway, EventBridge, KMS, Systems Manager, and Secrets Manager) are managed, multi-tenant regional services. They **do not** reside within the customer's private VPC network. 
+
+3. **Bridging the VPC Boundary for Serverless Services:**
+   * **Inbound to VPC (API Gateway Integration):** The Public API Gateway sits in the AWS public regional space and connects either to **DMZ Lambdas** inside the DMZ VPC for validation/orchestration (Variant B) or routes API traffic directly to the internal API Gateway via the TGW/execute-api path (Variant A). It **does not** route directly to the EKS frontend Web App nodes, maintaining isolation of EKS compute.
+   * **Outbound from VPC (Interface Endpoints):** Workloads in the private subnets access regional serverless services (like KMS or Secrets Manager) without traversing the public internet by using **Interface VPC Endpoints (AWS PrivateLink)**, which place Elastic Network Interfaces (ENIs) inside the private subnets.
+   * **Private API Ingress (execute-api Endpoint):** The Private API Gateway resides in the AWS private service network. To allow traffic from the DMZ EKS pods/lambdas (via TGW) to reach it, traffic is sent to the `execute-api` Interface VPC Endpoint ENIs (**NLB 1** fronts these ENIs). The endpoint ENIs then securely forward traffic over the AWS backbone to the Private API Gateway.
+   * **Private API Egress (VPC Link):** To forward requests back into the private subnets (to the EKS backend pods), the Private API Gateway uses a **VPC Link**. The VPC Link creates AWS-managed ENIs inside the Internal VPC's private subnets, which route the traffic directly to **NLB 2** (the EKS backend load balancer).
 
 ## 1.1 Edge — Imperva CDN & DDoS Scrubbing
 All inbound HTTPS traffic from the internet first hits Imperva. Imperva applies WAF rules, scrubs DDoS traffic, and caches static content. Clean traffic is forwarded to the F5 BIG-IP in the Network VPC.
