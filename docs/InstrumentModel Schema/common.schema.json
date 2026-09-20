@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/refdata/common.schema.json",
+  "title": "Common definitions",
+  "description": "Shared building blocks for the instrument and basket schemas. Decimals are strings to avoid binary floating point rounding. Patterns for identifier schemes mirror the seeds in ref.identifier_scheme and should be kept in step with them.",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "isoDate": {
+      "type": "string",
+      "format": "date"
+    },
+    "currencyCode": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "ISO 4217 alphabetic code."
+    },
+    "countryCode": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO 3166-1 alpha-2 code."
+    },
+    "micCode": {
+      "type": "string",
+      "pattern": "^[A-Z0-9]{4}$",
+      "description": "ISO 10383 market identifier code."
+    },
+    "leiCode": {
+      "type": "string",
+      "pattern": "^[A-Z0-9]{18}[0-9]{2}$",
+      "description": "ISO 17442 legal entity identifier."
+    },
+    "cfiCode": {
+      "type": "string",
+      "pattern": "^[A-Z]{6}$",
+      "description": "ISO 10962 classification of financial instruments."
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "description": "Upper snake case code drawn from a reference vocabulary held as data."
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+    },
+    "nonNegativeDecimal": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$"
+    },
+    "positiveDecimal": {
+      "type": "string",
+      "pattern": "^(?!0+(\\.0+)?$)[0-9]+(\\.[0-9]+)?$"
+    },
+    "money": {
+      "type": "object",
+      "properties": {
+        "amount": { "$ref": "#/$defs/decimal" },
+        "currency": { "$ref": "#/$defs/currencyCode" }
+      },
+      "required": ["amount", "currency"],
+      "additionalProperties": false
+    },
+    "validity": {
+      "type": "object",
+      "description": "Valid time. validFrom is inclusive and validTo is exclusive. A null validTo means open ended.",
+      "properties": {
+        "validFrom": { "$ref": "#/$defs/isoDate" },
+        "validTo": { "type": ["string", "null"], "format": "date" }
+      },
+      "required": ["validFrom"],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "sourceSystem": { "type": "string", "minLength": 1 },
+        "recordedBy": { "type": "string" },
+        "approvalStatus": { "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "approvedBy": { "type": "string" }
+      },
+      "required": ["sourceSystem"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "approvalStatus": { "const": "APPROVED" } },
+            "required": ["approvalStatus"]
+          },
+          "then": { "required": ["approvedBy"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "identifier": {
+      "type": "object",
+      "properties": {
+        "scheme": { "$ref": "#/$defs/code" },
+        "value": { "type": "string", "minLength": 1 },
+        "validity": { "$ref": "#/$defs/validity" }
+      },
+      "required": ["scheme", "value", "validity"],
+      "allOf": [
+        {
+          "if": { "properties": { "scheme": { "const": "ISIN" } }, "required": ["scheme"] },
+          "then": { "properties": { "value": { "pattern": "^[A-Z]{2}[A-Z0-9]{9}[0-9]$" } } }
+        },
+        {
+          "if": { "properties": { "scheme": { "const": "ASX_OPTION_CODE" } }, "required": ["scheme"] },
+          "then": { "properties": { "value": { "pattern": "^[A-Z0-9]{5,6}$" } } }
+        },
+        {
+          "if": { "properties": { "scheme": { "const": "FIGI" } }, "required": ["scheme"] },
+          "then": { "properties": { "value": { "pattern": "^[A-Z0-9]{12}$" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "typedRef": {
+      "description": "One typed pointer used by derivative underliers and basket lines. Exactly one target, chosen by refType.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "refType": { "const": "INSTRUMENT" },
+            "instrumentId": { "$ref": "#/$defs/uuid" }
+          },
+          "required": ["refType", "instrumentId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "refType": { "const": "INDEX" },
+            "indexId": { "$ref": "#/$defs/uuid" }
+          },
+          "required": ["refType", "indexId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "refType": { "const": "BASKET" },
+            "basketId": { "$ref": "#/$defs/uuid" }
+          },
+          "required": ["refType", "basketId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "refType": { "const": "CASH" },
+            "currency": { "$ref": "#/$defs/currencyCode" }
+          },
+          "required": ["refType", "currency"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "refType": { "const": "COMMODITY" },
+            "commodityCode": { "type": "string", "minLength": 1 }
+          },
+          "required": ["refType", "commodityCode"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "refType": { "const": "RATE" },
+            "rateCode": { "type": "string", "minLength": 1 }
+          },
+          "required": ["refType", "rateCode"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

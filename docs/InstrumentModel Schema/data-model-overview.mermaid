@@ -1,0 +1,150 @@
+---
+title: "Instrument reference data model: overview (keys only)"
+---
+erDiagram
+    admission_tier |o..o{ listing_status : "governing_framework, admission_tier"
+    basket ||--o{ basket_component : "basket_id"
+    basket |o--o| typed_ref : "basket_id"
+    derivative_instrument ||--o{ derivative_terms_version : "instrument_id, instrument_class"
+    derivative_instrument ||--o{ underlying_link : "instrument_id"
+    derivative_product ||--o{ contract_specification_version : "product_id"
+    derivative_product ||--o{ derivative_series : "product_id"
+    derivative_series ||--o{ derivative_instrument : "series_id"
+    eligibility_basis |o..o{ basket_component : "eligibility_basis"
+    etf |o--o{ basket : "etf_instrument_id"
+    etf ||--o{ etf_version : "instrument_id"
+    governing_framework ||..o{ admission_tier : "governing_framework"
+    governing_framework ||..o{ instrument_version : "governing_framework"
+    governing_framework ||..o{ status_code : "governing_framework"
+    identifier_scheme ||..o{ instrument_identifier : "scheme"
+    instrument ||--o| derivative_instrument : "instrument_id, instrument_class"
+    instrument ||--o| etf : "instrument_id, instrument_class"
+    instrument ||--o{ instrument_identifier : "instrument_id"
+    instrument ||--o{ instrument_version : "instrument_id"
+    instrument ||--o{ listing : "instrument_id"
+    instrument |o--o| typed_ref : "instrument_id"
+    listing ||--o{ listing_status : "listing_id"
+    listing ||--o{ listing_version : "listing_id"
+    obligation_ref |o..o{ eligibility_basis : "obligation_ref_id"
+    obligation_ref |o..o{ listing_status : "authority_ref_id"
+    reference_index |o--o{ basket : "index_id"
+    reference_index |o--o{ etf_version : "benchmark_index_id"
+    reference_index ||--o{ reference_index_version : "index_id"
+    reference_index |o--o| typed_ref : "index_id"
+    status_code ||..o{ listing_status : "governing_framework, status_code"
+    typed_ref ||--o{ basket_component : "typed_ref_id"
+    typed_ref ||--o{ underlying_link : "typed_ref_id"
+    basket {
+        uuid basket_id PK
+        uuid etf_instrument_id FK
+        uuid index_id FK
+    }
+    basket_component {
+        uuid basket_id PK, FK
+        date business_date PK
+        integer line_no PK
+        uuid typed_ref_id FK
+        text eligibility_basis FK
+    }
+    contract_specification_version {
+        uuid spec_version_id PK
+        uuid product_id FK
+    }
+    derivative_instrument {
+        uuid instrument_id PK, FK
+        text instrument_class FK
+        uuid series_id FK
+    }
+    derivative_product {
+        uuid product_id PK
+    }
+    derivative_series {
+        uuid series_id PK
+        uuid product_id FK
+    }
+    derivative_terms_version {
+        uuid terms_version_id PK
+        uuid instrument_id FK
+        text instrument_class FK
+    }
+    etf {
+        uuid instrument_id PK, FK
+        text instrument_class FK
+    }
+    etf_version {
+        uuid etf_version_id PK
+        uuid instrument_id FK
+        uuid benchmark_index_id FK
+    }
+    instrument {
+        uuid instrument_id PK
+    }
+    instrument_identifier {
+        uuid identifier_id PK
+        uuid instrument_id FK
+        text scheme FK
+    }
+    instrument_version {
+        uuid instrument_version_id PK
+        uuid instrument_id FK
+        text governing_framework FK
+    }
+    listing {
+        uuid listing_id PK
+        uuid instrument_id FK
+    }
+    listing_status {
+        uuid listing_status_id PK
+        uuid listing_id FK
+        text governing_framework FK
+        text status_code FK
+        text admission_tier FK
+        uuid authority_ref_id FK
+    }
+    listing_version {
+        uuid listing_version_id PK
+        uuid listing_id FK
+    }
+    reference_index {
+        uuid index_id PK
+        text index_code UK
+    }
+    reference_index_version {
+        uuid index_version_id PK
+        uuid index_id FK
+    }
+    typed_ref {
+        uuid typed_ref_id PK
+        uuid instrument_id FK, UK
+        uuid index_id FK, UK
+        uuid basket_id FK, UK
+        currency_code cash_currency UK
+        text commodity_code UK
+        text rate_code UK
+    }
+    underlying_link {
+        uuid underlying_link_id PK
+        uuid instrument_id FK
+        uuid typed_ref_id FK
+    }
+    admission_tier {
+        text governing_framework PK, FK
+        text tier_code PK
+    }
+    eligibility_basis {
+        text eligibility_basis PK
+        uuid obligation_ref_id FK
+    }
+    governing_framework {
+        text governing_framework PK
+    }
+    identifier_scheme {
+        text scheme PK
+    }
+    obligation_ref {
+        uuid obligation_ref_id PK
+    }
+    status_code {
+        text governing_framework PK, FK
+        text status_code PK
+    }

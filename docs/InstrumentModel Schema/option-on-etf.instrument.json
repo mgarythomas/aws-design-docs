@@ -1,0 +1,87 @@
+{
+  "instrumentClass": "OPTION",
+  "validity": {
+    "validFrom": "2026-06-01",
+    "validTo": "2026-12-18"
+  },
+  "fullName": "Example 200 Index ETF Dec 2026 35.50 Call",
+  "denominationCurrency": "AUD",
+  "governingFramework": "ASX_MARKET_ETO",
+  "lifecycleStatus": "ACTIVE",
+  "identifiers": [
+    {
+      "scheme": "ASX_OPTION_CODE",
+      "value": "ABCXX",
+      "validity": {
+        "validFrom": "2026-06-01",
+        "validTo": "2026-12-18"
+      }
+    },
+    {
+      "scheme": "DERIV_NATURAL_KEY",
+      "value": "XASX|ABC|2026-12-17|CALL|35.50",
+      "validity": {
+        "validFrom": "2026-06-01",
+        "validTo": "2026-12-18"
+      }
+    }
+  ],
+  "listings": [
+    {
+      "mic": "XASX",
+      "localSymbol": "ABCXX",
+      "tradingCurrency": "AUD",
+      "validity": {
+        "validFrom": "2026-06-01",
+        "validTo": "2026-12-18"
+      },
+      "statusHistory": [
+        {
+          "governingFramework": "ASX_MARKET_ETO",
+          "statusCode": "LIVE",
+          "validity": {
+            "validFrom": "2026-06-01",
+            "validTo": "2026-12-18"
+          }
+        }
+      ]
+    }
+  ],
+  "underlyings": [
+    {
+      "ref": {
+        "refType": "INSTRUMENT",
+        "instrumentId": "3b1f6c1e-0a55-4d2a-9c4e-5d6f7a8b9c01"
+      },
+      "weight": "1",
+      "validity": {
+        "validFrom": "2026-06-01",
+        "validTo": "2026-12-18"
+      }
+    }
+  ],
+  "derivativeTerms": {
+    "product": {
+      "mic": "XASX",
+      "productCode": "ABC",
+      "seriesPeriod": "2026-12"
+    },
+    "expiryDate": "2026-12-17",
+    "priceMultiplier": "100",
+    "deliveryType": "PHYS",
+    "optionType": "CALL",
+    "exerciseStyle": "EURO",
+    "strikePrice": {
+      "amount": "35.50",
+      "currency": "AUD"
+    },
+    "adjustedFlag": false,
+    "nonStandardFlag": false
+  },
+  "provenance": {
+    "sourceSystem": "example-admissions",
+    "recordedBy": "example.user",
+    "approvalStatus": "APPROVED",
+    "approvedBy": "example.checker"
+  }
+}

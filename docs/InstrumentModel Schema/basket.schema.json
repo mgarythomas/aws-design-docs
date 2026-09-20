@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/refdata/basket.schema.json",
+  "title": "Basket",
+  "description": "An immutable composition snapshot for one owner, basket type and business date. Owners are ETFs (creation, redemption, portfolio holdings) or indices (benchmark constituents). A corrected snapshot is a new versionNo that supersedes the earlier one. Uniqueness of lineNo within a basket cannot be expressed in JSON Schema and is enforced by the database. For large baskets use the header without components, then send lines in pages that conform to #/$defs/basketComponentPage.",
+  "type": "object",
+  "properties": {
+    "basketId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "owner": { "$ref": "#/$defs/owner" },
+    "basketType": { "enum": ["CREATION", "REDEMPTION", "PORTFOLIO_HOLDINGS", "BENCHMARK"] },
+    "businessDate": { "$ref": "common.schema.json#/$defs/isoDate" },
+    "versionNo": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["DRAFT", "PUBLISHED", "SUPERSEDED"] },
+    "receivedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Operator receipt time, taken at the edge before any processing."
+    },
+    "publishedAt": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Publication time as stated by the source."
+    },
+    "supersededAt": { "type": ["string", "null"], "format": "date-time" },
+    "cash": { "$ref": "common.schema.json#/$defs/money" },
+    "creationUnitSize": { "$ref": "common.schema.json#/$defs/positiveDecimal" },
+    "declaredLineCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Line count declared by the sender, checked against the lines actually received."
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "sourceSystem": { "type": "string", "minLength": 1 },
+        "sourceReference": { "type": "string" }
+      },
+      "required": ["sourceSystem"],
+      "additionalProperties": false
+    },
+    "components": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/basketComponent" }
+    }
+  },
+  "required": ["owner", "basketType", "businessDate", "versionNo", "status", "source"],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "owner": {
+            "properties": { "ownerType": { "const": "INDEX" } },
+            "required": ["ownerType"]
+          }
+        },
+        "required": ["owner"]
+      },
+      "then": { "properties": { "basketType": { "const": "BENCHMARK" } } },
+      "else": {
+        "properties": { "basketType": { "enum": ["CREATION", "REDEMPTION", "PORTFOLIO_HOLDINGS"] } }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "SUPERSEDED" } }, "required": ["status"] },
+      "then": {
+        "required": ["supersededAt"],
+        "properties": { "supersededAt": { "type": "string" } }
+      },
+      "else": { "properties": { "supersededAt": { "type": "null" } } }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "owner": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ownerType": { "const": "ETF" },
+            "instrumentId": { "$ref": "common.schema.json#/$defs/uuid" }
+          },
+          "required": ["ownerType", "instrumentId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ownerType": { "const": "INDEX" },
+            "indexId": { "$ref": "common.schema.json#/$defs/uuid" }
+          },
+          "required": ["ownerType", "indexId"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "basketComponent": {
+      "type": "object",
+      "properties": {
+        "lineNo": { "type": "integer", "minimum": 1 },
+        "ref": { "$ref": "common.schema.json#/$defs/typedRef" },
+        "quantity": {
+          "anyOf": [{ "$ref": "common.schema.json#/$defs/decimal" }, { "type": "null" }]
+        },
+        "weight": {
+          "anyOf": [{ "$ref": "common.schema.json#/$defs/nonNegativeDecimal" }, { "type": "null" }]
+        },
+        "direction": { "enum": ["LONG", "SHORT"], "default": "LONG" },
+        "componentCurrency": { "$ref": "common.schema.json#/$defs/currencyCode" },
+        "eligibilityBasis": { "$ref": "common.schema.json#/$defs/code" }
+      },
+      "required": ["lineNo", "ref"],
+      "anyOf": [
+        { "properties": { "quantity": { "type": "string" } }, "required": ["quantity"] },
+        { "properties": { "weight": { "type": "string" } }, "required": ["weight"] }
+      ],
+      "additionalProperties": false
+    },
+    "basketComponentPage": {
+      "type": "object",
+      "properties": {
+        "basketId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "businessDate": { "$ref": "common.schema.json#/$defs/isoDate" },
+        "pageNo": { "type": "integer", "minimum": 1 },
+        "final": { "type": "boolean" },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/basketComponent" }
+        }
+      },
+      "required": ["basketId", "businessDate", "components"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "owner": {
+    "ownerType": "ETF",
+    "instrumentId": "3b1f6c1e-0a55-4d2a-9c4e-5d6f7a8b9c01"
+  },
+  "basketType": "PORTFOLIO_HOLDINGS",
+  "businessDate": "2026-09-18",
+  "versionNo": 1,
+  "status": "PUBLISHED",
+  "receivedAt": "2026-09-18T20:14:03+10:00",
+  "publishedAt": "2026-09-18T19:58:00+10:00",
+  "supersededAt": null,
+  "cash": {
+    "amount": "1250.75",
+    "currency": "AUD"
+  },
+  "creationUnitSize": "50000",
+  "declaredLineCount": 4,
+  "source": {
+    "sourceSystem": "example-issuer-portal",
+    "sourceReference": "HOLD-2026-09-18-001"
+  },
+  "components": [
+    {
+      "lineNo": 1,
+      "ref": {
+        "refType": "INSTRUMENT",
+        "instrumentId": "a1b2c3d4-4e99-4c6e-9a82-91adbe2f3a05"
+      },
+      "quantity": "1200",
+      "weight": "0.4100",
+      "direction": "LONG",
+      "componentCurrency": "AUD",
+      "eligibilityBasis": "EXCHANGE_TRADED_SECURITY"
+    },
+    {
+      "lineNo": 2,
+      "ref": {
+        "refType": "INSTRUMENT",
+        "instrumentId": "b2c3d4e5-5faa-4d7f-8b93-a2becf304b06"
+      },
+      "quantity": "800",
+      "weight": "0.3900",
+      "direction": "LONG",
+      "componentCurrency": "AUD",
+      "eligibilityBasis": "EXCHANGE_TRADED_SECURITY"
+    },
+    {
+      "lineNo": 3,
+      "ref": {
+        "refType": "INSTRUMENT",
+        "instrumentId": "9a4b8c63-3d88-4b5d-8f71-809cad1e2f04"
+      },
+      "quantity": "2",
+      "weight": "0.1900",
+      "direction": "LONG",
+      "componentCurrency": "AUD",
+      "eligibilityBasis": "OTHER_APPROVED"
+    },
+    {
+      "lineNo": 4,
+      "ref": {
+        "refType": "CASH",
+        "currency": "AUD"
+      },
+      "weight": "0.0100",
+      "direction": "LONG",
+      "componentCurrency": "AUD"
+    }
+  ]
+}

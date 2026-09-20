@@ -1,0 +1,83 @@
+{
+  "instrumentId": "3b1f6c1e-0a55-4d2a-9c4e-5d6f7a8b9c01",
+  "instrumentClass": "ETF",
+  "validity": {
+    "validFrom": "2020-02-01",
+    "validTo": null
+  },
+  "cfiCode": "CIOGEU",
+  "fisn": "EXAMPLE 200 IDX ETF/UT",
+  "fullName": "Example 200 Index ETF",
+  "denominationCurrency": "AUD",
+  "governingFramework": "AQUA_RULES",
+  "lifecycleStatus": "ACTIVE",
+  "identifiers": [
+    {
+      "scheme": "ISIN",
+      "value": "AU000000ABC1",
+      "validity": {
+        "validFrom": "2020-02-01",
+        "validTo": null
+      }
+    },
+    {
+      "scheme": "ASX_CODE",
+      "value": "ABC",
+      "validity": {
+        "validFrom": "2020-02-01",
+        "validTo": null
+      }
+    }
+  ],
+  "listings": [
+    {
+      "mic": "XASX",
+      "localSymbol": "ABC",
+      "tradingCurrency": "AUD",
+      "validity": {
+        "validFrom": "2020-02-01",
+        "validTo": null
+      },
+      "statusHistory": [
+        {
+          "governingFramework": "AQUA_RULES",
+          "statusCode": "LIVE",
+          "admissionTier": "TRADING_STATUS",
+          "validity": {
+            "validFrom": "2020-02-01",
+            "validTo": null
+          },
+          "provenance": {
+            "sourceSystem": "example-admissions",
+            "recordedBy": "example.user",
+            "approvalStatus": "APPROVED",
+            "approvedBy": "example.checker"
+          }
+        }
+      ]
+    }
+  ],
+  "etfTerms": {
+    "aquaProductType": "ETF_SECURITY",
+    "replicationMethod": "PHYSICAL",
+    "terPercent": "0.0500",
+    "distributionPolicy": "DISTRIBUTING",
+    "creationUnitSize": "50000",
+    "leverageFactor": "1",
+    "currencyHedged": false,
+    "domicile": "AU",
+    "benchmarkIndexId": "7c2d9e40-1b66-4f3b-8d5f-6e7a8b9c0d02",
+    "usesOtcDerivatives": false
+  },
+  "extensions": {
+    "example-operator": {
+      "internalRiskTier": "B"
+    }
+  },
+  "provenance": {
+    "sourceSystem": "example-admissions",
+    "recordedBy": "example.user",
+    "approvalStatus": "APPROVED",
+    "approvedBy": "example.checker"
+  }
+}

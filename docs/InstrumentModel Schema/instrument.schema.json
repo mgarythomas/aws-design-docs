@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/refdata/instrument.schema.json",
+  "title": "Instrument",
+  "description": "An instrument with its identifiers, listings, derivative or ETF terms and underlyings, as at a point in valid time. Decimals are strings. The x-iso20022Path annotations are indicative auth.017 element paths and must be verified against the ISO 20022 repository. Strict validators such as Ajv need x-iso20022Path registered as a keyword, or strict mode relaxed.",
+  "type": "object",
+  "properties": {
+    "instrumentId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "instrumentClass": { "enum": ["EQUITY", "ETF", "FUTURE", "OPTION"] },
+    "validity": { "$ref": "common.schema.json#/$defs/validity" },
+    "cfiCode": {
+      "$ref": "common.schema.json#/$defs/cfiCode",
+      "x-iso20022Path": "FinInstrmGnlAttrbts/ClssfctnTp"
+    },
+    "fisn": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 35,
+      "x-iso20022Path": "FinInstrmGnlAttrbts/ShrtNm"
+    },
+    "fullName": {
+      "type": "string",
+      "minLength": 1,
+      "x-iso20022Path": "FinInstrmGnlAttrbts/FullNm"
+    },
+    "denominationCurrency": {
+      "$ref": "common.schema.json#/$defs/currencyCode",
+      "x-iso20022Path": "FinInstrmGnlAttrbts/NtnlCcy"
+    },
+    "issuerLei": {
+      "$ref": "common.schema.json#/$defs/leiCode",
+      "x-iso20022Path": "Issr"
+    },
+    "governingFramework": { "$ref": "common.schema.json#/$defs/code" },
+    "lifecycleStatus": { "enum": ["PROPOSED", "ACTIVE", "EXPIRED", "TERMINATED"] },
+    "identifiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/identifier" },
+      "x-iso20022Path": "FinInstrmGnlAttrbts/Id (scheme ISIN)"
+    },
+    "listings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/listing" }
+    },
+    "underlyings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/underlyingLink" }
+    },
+    "derivativeTerms": { "type": "object" },
+    "etfTerms": { "$ref": "#/$defs/etfTerms" },
+    "extensions": {
+      "type": "object",
+      "description": "Extension block. Keys are namespaces owned by the extending party and never reuse ISO 20022 names.",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+      "additionalProperties": { "type": "object" }
+    },
+    "provenance": { "$ref": "common.schema.json#/$defs/provenance" }
+  },
+  "required": [
+    "instrumentClass",
+    "validity",
+    "fullName",
+    "denominationCurrency",
+    "governingFramework",
+    "lifecycleStatus",
+    "identifiers"
+  ],
+  "allOf": [
+    {
+      "if": { "properties": { "instrumentClass": { "const": "FUTURE" } }, "required": ["instrumentClass"] },
+      "then": {
+        "properties": {
+          "derivativeTerms": { "$ref": "#/$defs/futureTerms" },
+          "underlyings": { "minItems": 1 }
+        },
+        "required": ["derivativeTerms", "underlyings"],
+        "not": { "required": ["etfTerms"] }
+      }
+    },
+    {
+      "if": { "properties": { "instrumentClass": { "const": "OPTION" } }, "required": ["instrumentClass"] },
+      "then": {
+        "properties": {
+          "derivativeTerms": { "$ref": "#/$defs/optionTerms" },
+          "underlyings": { "minItems": 1 }
+        },
+        "required": ["derivativeTerms", "underlyings"],
+        "not": { "required": ["etfTerms"] }
+      }
+    },
+    {
+      "if": { "properties": { "instrumentClass": { "const": "ETF" } }, "required": ["instrumentClass"] },
+      "then": {
+        "required": ["etfTerms"],
+        "not": { "anyOf": [{ "required": ["derivativeTerms"] }, { "required": ["underlyings"] }] }
+      }
+    },
+    {
+      "if": { "properties": { "instrumentClass": { "const": "EQUITY" } }, "required": ["instrumentClass"] },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["derivativeTerms"] },
+            { "required": ["underlyings"] },
+            { "required": ["etfTerms"] }
+          ]
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "listing": {
+      "type": "object",
+      "properties": {
+        "listingId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "mic": {
+          "$ref": "common.schema.json#/$defs/micCode",
+          "x-iso20022Path": "TradgVnRltdAttrbts/Id"
+        },
+        "localSymbol": { "type": "string", "minLength": 1 },
+        "tradingCurrency": { "$ref": "common.schema.json#/$defs/currencyCode" },
+        "tickSizeRegime": { "type": "string" },
+        "lotSize": { "$ref": "common.schema.json#/$defs/positiveDecimal" },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" },
+        "statusHistory": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/listingStatus" }
+        }
+      },
+      "required": ["mic", "localSymbol", "tradingCurrency", "validity"],
+      "additionalProperties": false
+    },
+    "listingStatus": {
+      "type": "object",
+      "properties": {
+        "governingFramework": { "$ref": "common.schema.json#/$defs/code" },
+        "statusCode": { "$ref": "common.schema.json#/$defs/code" },
+        "admissionTier": { "$ref": "common.schema.json#/$defs/code" },
+        "reason": { "type": "string" },
+        "authorityRefId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" },
+        "provenance": { "$ref": "common.schema.json#/$defs/provenance" }
+      },
+      "required": ["governingFramework", "statusCode", "validity"],
+      "additionalProperties": false
+    },
+    "underlyingLink": {
+      "type": "object",
+      "properties": {
+        "ref": { "$ref": "common.schema.json#/$defs/typedRef" },
+        "weight": { "$ref": "common.schema.json#/$defs/positiveDecimal", "default": "1" },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" }
+      },
+      "required": ["ref", "validity"],
+      "additionalProperties": false
+    },
+    "derivativeProduct": {
+      "type": "object",
+      "properties": {
+        "mic": { "$ref": "common.schema.json#/$defs/micCode" },
+        "productCode": { "type": "string", "minLength": 1 },
+        "seriesPeriod": { "type": "string", "minLength": 1 }
+      },
+      "required": ["mic", "productCode", "seriesPeriod"],
+      "additionalProperties": false
+    },
+    "futureTerms": {
+      "type": "object",
+      "properties": {
+        "product": { "$ref": "#/$defs/derivativeProduct" },
+        "expiryDate": {
+          "$ref": "common.schema.json#/$defs/isoDate",
+          "x-iso20022Path": "DerivInstrmAttrbts/XpryDt"
+        },
+        "priceMultiplier": {
+          "$ref": "common.schema.json#/$defs/positiveDecimal",
+          "x-iso20022Path": "DerivInstrmAttrbts/PricMltplr"
+        },
+        "deliveryType": {
+          "enum": ["PHYS", "CASH", "OPTL"],
+          "x-iso20022Path": "DerivInstrmAttrbts/DlvryTp"
+        },
+        "adjustedFlag": { "type": "boolean" },
+        "nonStandardFlag": { "type": "boolean" }
+      },
+      "required": ["product", "expiryDate", "priceMultiplier", "deliveryType"],
+      "additionalProperties": false
+    },
+    "optionTerms": {
+      "type": "object",
+      "properties": {
+        "product": { "$ref": "#/$defs/derivativeProduct" },
+        "expiryDate": {
+          "$ref": "common.schema.json#/$defs/isoDate",
+          "x-iso20022Path": "DerivInstrmAttrbts/XpryDt"
+        },
+        "priceMultiplier": {
+          "$ref": "common.schema.json#/$defs/positiveDecimal",
+          "x-iso20022Path": "DerivInstrmAttrbts/PricMltplr"
+        },
+        "deliveryType": {
+          "enum": ["PHYS", "CASH", "OPTL"],
+          "x-iso20022Path": "DerivInstrmAttrbts/DlvryTp"
+        },
+        "optionType": {
+          "enum": ["PUTO", "CALL", "OTHR"],
+          "x-iso20022Path": "DerivInstrmAttrbts/OptnTp"
+        },
+        "exerciseStyle": {
+          "enum": ["EURO", "AMER", "ASIA", "BERM", "OTHR"],
+          "x-iso20022Path": "DerivInstrmAttrbts/OptnExrcStyle"
+        },
+        "strikePrice": {
+          "type": "object",
+          "properties": {
+            "amount": { "$ref": "common.schema.json#/$defs/nonNegativeDecimal" },
+            "currency": { "$ref": "common.schema.json#/$defs/currencyCode" }
+          },
+          "required": ["amount", "currency"],
+          "additionalProperties": false,
+          "x-iso20022Path": "DerivInstrmAttrbts/StrkPric"
+        },
+        "adjustedFlag": { "type": "boolean" },
+        "nonStandardFlag": { "type": "boolean" }
+      },
+      "required": [
+        "product",
+        "expiryDate",
+        "priceMultiplier",
+        "deliveryType",
+        "optionType",
+        "exerciseStyle",
+        "strikePrice"
+      ],
+      "additionalProperties": false
+    },
+    "etfTerms": {
+      "type": "object",
+      "properties": {
+        "aquaProductType": { "enum": ["ETF_SECURITY", "MANAGED_FUND", "STRUCTURED_PRODUCT"] },
+        "replicationMethod": { "enum": ["PHYSICAL", "SYNTHETIC"] },
+        "terPercent": { "$ref": "common.schema.json#/$defs/nonNegativeDecimal" },
+        "distributionPolicy": { "enum": ["ACCUMULATING", "DISTRIBUTING"] },
+        "creationUnitSize": { "$ref": "common.schema.json#/$defs/positiveDecimal" },
+        "leverageFactor": {
+          "$ref": "common.schema.json#/$defs/decimal",
+          "description": "Negative values denote inverse products."
+        },
+        "currencyHedged": { "type": "boolean" },
+        "domicile": { "$ref": "common.schema.json#/$defs/countryCode" },
+        "benchmarkIndexId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "usesOtcDerivatives": { "type": "boolean" }
+      },
+      "required": ["aquaProductType"],
+      "additionalProperties": false
+    }
+  }
+}

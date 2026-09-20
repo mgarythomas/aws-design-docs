@@ -1,0 +1,49 @@
+{
+  "instrumentClass": "FUTURE",
+  "validity": {
+    "validFrom": "2026-03-01",
+    "validTo": "2026-12-18"
+  },
+  "fullName": "Example 200 Index Future Dec 2026",
+  "denominationCurrency": "AUD",
+  "governingFramework": "ASX24_OPERATING_RULES",
+  "lifecycleStatus": "ACTIVE",
+  "identifiers": [
+    {
+      "scheme": "DERIV_NATURAL_KEY",
+      "value": "XSFE|EX|2026-12|FUT",
+      "validity": {
+        "validFrom": "2026-03-01",
+        "validTo": "2026-12-18"
+      }
+    }
+  ],
+  "underlyings": [
+    {
+      "ref": {
+        "refType": "INDEX",
+        "indexId": "7c2d9e40-1b66-4f3b-8d5f-6e7a8b9c0d02"
+      },
+      "validity": {
+        "validFrom": "2026-03-01",
+        "validTo": "2026-12-18"
+      }
+    }
+  ],
+  "derivativeTerms": {
+    "product": {
+      "mic": "XSFE",
+      "productCode": "EX",
+      "seriesPeriod": "2026-12"
+    },
+    "expiryDate": "2026-12-17",
+    "priceMultiplier": "25",
+    "deliveryType": "CASH"
+  },
+  "provenance": {
+    "sourceSystem": "example-admissions",
+    "recordedBy": "example.user",
+    "approvalStatus": "APPROVED",
+    "approvedBy": "example.checker"
+  }
+}
