@@ -1,0 +1,214 @@
+{
+  "issuerId": "30000000-0000-0000-0000-000000000001",
+  "entityId": "10000000-0000-0000-0000-000000000001",
+  "validity": {
+    "validFrom": "2010-01-01",
+    "validTo": null
+  },
+  "legalForm": "PUBLIC_COMPANY",
+  "jurisdiction": "AU",
+  "incorporationDate": "2001-05-01",
+  "registrationStatus": "ACTIVE",
+  "names": [
+    {
+      "nameType": "LEGAL",
+      "name": "Example Resources Limited",
+      "validity": {
+        "validFrom": "2010-01-01",
+        "validTo": null
+      }
+    },
+    {
+      "nameType": "FORMER",
+      "name": "Example Exploration Limited",
+      "validity": {
+        "validFrom": "2001-05-01",
+        "validTo": "2010-01-01"
+      }
+    },
+    {
+      "nameType": "SHORT",
+      "name": "EXAMPLE RES",
+      "validity": {
+        "validFrom": "2010-01-01",
+        "validTo": null
+      }
+    }
+  ],
+  "identifiers": [
+    {
+      "scheme": "LEI",
+      "value": "529900EXAMPLE0000012",
+      "validity": {
+        "validFrom": "2015-01-01",
+        "validTo": null
+      }
+    },
+    {
+      "scheme": "ABN",
+      "value": "11000000000",
+      "validity": {
+        "validFrom": "2001-05-01",
+        "validTo": null
+      }
+    },
+    {
+      "scheme": "ACN",
+      "value": "123456780",
+      "validity": {
+        "validFrom": "2001-05-01",
+        "validTo": null
+      }
+    }
+  ],
+  "addresses": [
+    {
+      "addressType": "REGISTERED_OFFICE",
+      "line1": "1 Example Street",
+      "locality": "Sydney",
+      "region": "NSW",
+      "postalCode": "2000",
+      "country": "AU",
+      "validity": {
+        "validFrom": "2010-01-01",
+        "validTo": null
+      }
+    }
+  ],
+  "groupRelationships": [
+    {
+      "relationshipType": "DIRECT_PARENT",
+      "parentEntityId": "10000000-0000-0000-0000-000000000002",
+      "ownershipPercent": "62.5",
+      "validity": {
+        "validFrom": "2015-01-01",
+        "validTo": null
+      }
+    }
+  ],
+  "serviceProviders": [
+    {
+      "serviceRole": "AUDITOR",
+      "providerEntityId": "10000000-0000-0000-0000-000000000003",
+      "validity": {
+        "validFrom": "2018-07-01",
+        "validTo": null
+      }
+    },
+    {
+      "serviceRole": "SHARE_REGISTRY",
+      "providerEntityId": "10000000-0000-0000-0000-000000000005",
+      "validity": {
+        "validFrom": "2010-01-01",
+        "validTo": null
+      }
+    }
+  ],
+  "officers": [
+    {
+      "personId": "20000000-0000-0000-0000-000000000001",
+      "roleType": "COMPANY_SECRETARY",
+      "validity": {
+        "validFrom": "2019-03-01",
+        "validTo": null
+      }
+    },
+    {
+      "personId": "20000000-0000-0000-0000-000000000002",
+      "roleType": "DIRECTOR",
+      "validity": {
+        "validFrom": "2016-09-15",
+        "validTo": null
+      }
+    },
+    {
+      "personId": "20000000-0000-0000-0000-000000000003",
+      "roleType": "CHIEF_EXECUTIVE",
+      "validity": {
+        "validFrom": "2018-02-01",
+        "validTo": null
+      }
+    }
+  ],
+  "issuerAttributes": {
+    "reportingCurrency": "AUD",
+    "financialYearEnd": {
+      "month": 6,
+      "day": 30
+    },
+    "principalActivities": "Mineral exploration",
+    "websiteUrl": "https://example.invalid",
+    "validity": {
+      "validFrom": "2010-01-01",
+      "validTo": null
+    }
+  },
+  "classifications": [
+    {
+      "scheme": "GICS",
+      "code": "15104050",
+      "validity": {
+        "validFrom": "2010-01-01",
+        "validTo": null
+      }
+    }
+  ],
+  "statusHistory": [
+    {
+      "governingFramework": "LISTING_RULES",
+      "statusCode": "ADMITTED",
+      "listingCategory": "ASX_LISTING",
+      "validity": {
+        "validFrom": "2010-01-01",
+        "validTo": null
+      },
+      "provenance": {
+        "sourceSystem": "example-admissions",
+        "recordedBy": "example.user",
+        "approvalStatus": "APPROVED",
+        "approvedBy": "example.checker"
+      }
+    }
+  ],
+  "nominatedExchangeContacts": [
+    {
+      "personId": "20000000-0000-0000-0000-000000000001",
+      "isPrimary": true,
+      "complianceCourseCompletedOn": "2020-08-01",
+      "validity": {
+        "validFrom": "2019-03-01",
+        "validTo": null
+      }
+    },
+    {
+      "personId": "20000000-0000-0000-0000-000000000002",
+      "isPrimary": false,
+      "complianceCourseCompletedOn": null,
+      "validity": {
+        "validFrom": "2021-01-01",
+        "validTo": null
+      }
+    }
+  ],
+  "issuedInstruments": [
+    {
+      "instrumentId": "40000000-0000-0000-0000-000000000001",
+      "partyRole": "ISSUER",
+      "validity": {
+        "validFrom": "2010-01-01",
+        "validTo": null
+      }
+    }
+  ],
+  "extensions": {
+    "example-operator": {
+      "supervisionTier": "standard"
+    }
+  },
+  "provenance": {
+    "sourceSystem": "example-admissions",
+    "recordedBy": "example.user",
+    "approvalStatus": "APPROVED",
+    "approvedBy": "example.checker"
+  }
+}

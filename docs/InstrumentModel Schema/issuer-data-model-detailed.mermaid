@@ -1,0 +1,257 @@
+---
+title: "Issuer reference data model - all columns"
+---
+erDiagram
+    classification_scheme ||..o{ issuer_classification : "scheme"
+    entity_identifier_scheme ||..o{ entity_identifier : "scheme"
+    entity_registration_status ||..o{ legal_entity_version : "registration_status"
+    entity_relationship_type ||..o{ entity_relationship : "relationship_type"
+    entity_service_role ||..o{ entity_service_provider : "service_role"
+    governing_framework ||..o{ issuer_status_code : "governing_framework"
+    instrument ||--o{ instrument_issuer : "instrument_id"
+    instrument_party_role ||..o{ instrument_issuer : "party_role"
+    issuer ||--o{ instrument_issuer : "issuer_id"
+    issuer ||--o{ issuer_classification : "issuer_id"
+    issuer ||--o{ issuer_status : "issuer_id"
+    issuer ||--o{ issuer_version : "issuer_id"
+    issuer ||--o{ nominated_exchange_contact : "issuer_id"
+    issuer_status_code ||..o{ issuer_status : "governing_framework, status_code"
+    legal_entity ||--o{ entity_address : "entity_id"
+    legal_entity ||--o{ entity_identifier : "entity_id"
+    legal_entity ||--o{ entity_name : "entity_id"
+    legal_entity ||--o{ entity_relationship : "child_entity_id"
+    legal_entity ||--o{ entity_relationship : "parent_entity_id"
+    legal_entity ||--o{ entity_service_provider : "client_entity_id"
+    legal_entity ||--o{ entity_service_provider : "provider_entity_id"
+    legal_entity ||--o| issuer : "entity_id"
+    legal_entity ||--o{ legal_entity_version : "entity_id"
+    legal_entity ||--o{ officer_appointment : "entity_id"
+    legal_form |o..o{ legal_entity_version : "legal_form_code"
+    listing_category |o..o{ issuer_status : "listing_category"
+    obligation_ref |o..o{ issuer_status : "authority_ref_id"
+    officer_role_type ||..o{ officer_appointment : "role_type"
+    person ||--o{ nominated_exchange_contact : "person_id"
+    person ||--o{ officer_appointment : "person_id"
+    entity_address {
+        uuid address_id PK
+        uuid entity_id FK
+        text address_type
+        text line_1
+        text line_2 "optional"
+        text locality
+        text region "optional"
+        text postal_code "optional"
+        country_code country
+        daterange valid_range
+        tstzrange recorded_range
+        text source_system
+        text recorded_by
+        text approval_status
+        text approved_by "optional"
+    }
+    entity_identifier {
+        uuid identifier_id PK
+        uuid entity_id FK
+        text scheme FK
+        text id_value
+        daterange valid_range
+        tstzrange recorded_range
+        text source_system
+    }
+    entity_name {
+        uuid entity_name_id PK
+        uuid entity_id FK
+        text name_type
+        text name
+        daterange valid_range
+        tstzrange recorded_range
+        text source_system
+        text recorded_by
+        text approval_status
+        text approved_by "optional"
+    }
+    entity_relationship {
+        uuid relationship_id PK
+        uuid child_entity_id FK
+        uuid parent_entity_id FK
+        text relationship_type FK
+        numeric ownership_percent "optional"
+        daterange valid_range
+        tstzrange recorded_range
+        text source_system
+        text recorded_by
+        text approval_status
+        text approved_by "optional"
+    }
+    entity_service_provider {
+        uuid service_id PK
+        uuid client_entity_id FK
+        uuid provider_entity_id FK
+        text service_role FK
+        daterange valid_range
+        tstzrange recorded_range
+        text source_system
+        text recorded_by
+        text approval_status
+        text approved_by "optional"
+    }
+    legal_entity {
+        uuid entity_id PK
+        timestamptz created_at
+    }
+    legal_entity_version {
+        uuid entity_version_id PK
+        uuid entity_id FK
+        daterange valid_range
+        tstzrange recorded_range
+        text legal_form_code FK "optional"
+        country_code jurisdiction
+        date incorporation_date "optional"
+        text registration_status FK
+        jsonb ext
+        text source_system
+        text recorded_by
+        text approval_status
+        text approved_by "optional"
+    }
+    officer_appointment {
+        uuid appointment_id PK
+        uuid entity_id FK
+        uuid person_id FK
+        text role_type FK
+        daterange valid_range
+        tstzrange recorded_range
+        text source_system
+        text recorded_by
+        text approval_status
+        text approved_by "optional"
+    }
+    person {
+        uuid person_id PK
+        text full_name
+        text business_email "optional"
+        text business_phone "optional"
+        timestamptz created_at
+    }
+    instrument_issuer {
+        uuid instrument_issuer_id PK
+        uuid instrument_id FK
+        uuid issuer_id FK
+        text party_role FK
+        daterange valid_range
+        tstzrange recorded_range
+        text source_system
+    }
+    issuer {
+        uuid issuer_id PK
+        uuid entity_id FK, UK
+        timestamptz created_at
+    }
+    issuer_classification {
+        uuid classification_id PK
+        uuid issuer_id FK
+        text scheme FK
+        text code
+        daterange valid_range
+        tstzrange recorded_range
+        text source_system
+    }
+    issuer_status {
+        uuid issuer_status_id PK
+        uuid issuer_id FK
+        text governing_framework FK
+        text status_code FK
+        text listing_category FK "optional"
+        text reason "optional"
+        uuid authority_ref_id FK "optional"
+        daterange valid_range
+        tstzrange recorded_range
+        text source_system
+        text recorded_by
+        text approval_status
+        text approved_by "optional"
+    }
+    issuer_version {
+        uuid issuer_version_id PK
+        uuid issuer_id FK
+        daterange valid_range
+        tstzrange recorded_range
+        currency_code reporting_currency "optional"
+        int2 financial_year_end_month "optional"
+        int2 financial_year_end_day "optional"
+        mic_code home_exchange_mic "optional"
+        text principal_activities "optional"
+        text website_url "optional"
+        jsonb ext
+        text source_system
+        text recorded_by
+        text approval_status
+        text approved_by "optional"
+    }
+    nominated_exchange_contact {
+        uuid contact_id PK
+        uuid issuer_id FK
+        uuid person_id FK
+        boolean is_primary
+        date compliance_course_completed_on "optional"
+        daterange valid_range
+        tstzrange recorded_range
+        text source_system
+        text recorded_by
+        text approval_status
+        text approved_by "optional"
+    }
+    entity_identifier_scheme {
+        text scheme PK
+        text description
+        text value_pattern "optional"
+    }
+    legal_form {
+        text legal_form_code PK
+        text description
+        text iso20275_code "optional"
+    }
+    entity_registration_status {
+        text status_code PK
+        boolean is_terminal
+        text description
+    }
+    entity_relationship_type {
+        text relationship_type PK
+        text description
+    }
+    entity_service_role {
+        text service_role PK
+        text description
+    }
+    officer_role_type {
+        text role_type PK
+        text description
+    }
+    classification_scheme {
+        text scheme PK
+        text description
+    }
+    listing_category {
+        text listing_category PK
+        text description
+    }
+    instrument_party_role {
+        text party_role PK
+        text description
+    }
+    issuer_status_code {
+        text governing_framework PK, FK
+        text status_code PK
+        boolean is_terminal
+        text description "optional"
+    }
+    instrument {
+        uuid instrument_id PK
+    }
+    governing_framework {
+        text governing_framework PK
+    }
+    obligation_ref {
+        uuid obligation_ref_id PK
+    }

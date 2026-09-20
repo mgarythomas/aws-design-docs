@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/refdata/issuer.schema.json",
+  "title": "Issuer",
+  "description": "An issuer, typically a listed company, with its legal entity data, group structure, service providers, officers, admission status under each governing framework, nominated exchange contacts and the instruments it issued, as at a point in valid time. Decimals are strings. Personal data is limited to person identifiers and an optional display name. Contact details are held and served separately. Vocabulary values (roles, statuses, categories) are data and are validated against reference tables by the database, so this schema constrains only their shape.",
+  "type": "object",
+  "properties": {
+    "issuerId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "entityId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "validity": { "$ref": "common.schema.json#/$defs/validity" },
+    "legalForm": { "$ref": "common.schema.json#/$defs/code" },
+    "jurisdiction": {
+      "$ref": "common.schema.json#/$defs/countryCode",
+      "description": "Jurisdiction of formation or registration.",
+      "x-gleifPath": "Entity/LegalJurisdiction"
+    },
+    "incorporationDate": { "$ref": "common.schema.json#/$defs/isoDate" },
+    "registrationStatus": { "$ref": "common.schema.json#/$defs/code" },
+    "names": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entityName" },
+      "contains": {
+        "properties": { "nameType": { "const": "LEGAL" } },
+        "required": ["nameType"]
+      },
+      "x-gleifPath": "Entity/LegalName, Entity/OtherEntityNames"
+    },
+    "identifiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entityIdentifier" }
+    },
+    "addresses": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/address" }
+    },
+    "groupRelationships": {
+      "type": "array",
+      "description": "Parents of this entity. Seen from the child.",
+      "items": { "$ref": "#/$defs/groupRelationship" }
+    },
+    "serviceProviders": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/serviceProvider" }
+    },
+    "officers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/officer" }
+    },
+    "issuerAttributes": { "$ref": "#/$defs/issuerAttributes" },
+    "classifications": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/classification" }
+    },
+    "statusHistory": {
+      "type": "array",
+      "description": "Admission to and removal from the official list, per governing framework.",
+      "items": { "$ref": "#/$defs/issuerStatus" }
+    },
+    "nominatedExchangeContacts": {
+      "type": "array",
+      "description": "Persons responsible for communication with the exchange. An entity may have more than one.",
+      "items": { "$ref": "#/$defs/nominatedContact" }
+    },
+    "issuedInstruments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/issuedInstrument" }
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Extension block. Keys are namespaces owned by the extending party.",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+      "additionalProperties": { "type": "object" }
+    },
+    "provenance": { "$ref": "common.schema.json#/$defs/provenance" }
+  },
+  "required": ["jurisdiction", "registrationStatus", "validity", "names", "identifiers"],
+  "additionalProperties": false,
+  "$defs": {
+    "entityName": {
+      "type": "object",
+      "properties": {
+        "nameType": { "enum": ["LEGAL", "TRADING", "FORMER", "SHORT"] },
+        "name": { "type": "string", "minLength": 1 },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" }
+      },
+      "required": ["nameType", "name", "validity"],
+      "additionalProperties": false
+    },
+    "entityIdentifier": {
+      "type": "object",
+      "properties": {
+        "scheme": { "$ref": "common.schema.json#/$defs/code" },
+        "value": { "type": "string", "minLength": 1 },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" }
+      },
+      "required": ["scheme", "value", "validity"],
+      "allOf": [
+        {
+          "if": { "properties": { "scheme": { "const": "LEI" } }, "required": ["scheme"] },
+          "then": { "properties": { "value": { "pattern": "^[A-Z0-9]{18}[0-9]{2}$" } } }
+        },
+        {
+          "if": { "properties": { "scheme": { "const": "ABN" } }, "required": ["scheme"] },
+          "then": { "properties": { "value": { "pattern": "^[0-9]{11}$" } } }
+        },
+        {
+          "if": { "properties": { "scheme": { "enum": ["ACN", "ARBN"] } }, "required": ["scheme"] },
+          "then": { "properties": { "value": { "pattern": "^[0-9]{9}$" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "address": {
+      "type": "object",
+      "properties": {
+        "addressType": { "enum": ["REGISTERED_OFFICE", "PRINCIPAL_PLACE_OF_BUSINESS", "POSTAL"] },
+        "line1": { "type": "string", "minLength": 1 },
+        "line2": { "type": "string" },
+        "locality": { "type": "string", "minLength": 1 },
+        "region": { "type": "string" },
+        "postalCode": { "type": "string" },
+        "country": { "$ref": "common.schema.json#/$defs/countryCode" },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" }
+      },
+      "required": ["addressType", "line1", "locality", "country", "validity"],
+      "additionalProperties": false
+    },
+    "groupRelationship": {
+      "type": "object",
+      "properties": {
+        "relationshipType": {
+          "$ref": "common.schema.json#/$defs/code",
+          "x-gleifPath": "DIRECT_ and ULTIMATE_ACCOUNTING_CONSOLIDATION_PARENT"
+        },
+        "parentEntityId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "ownershipPercent": {
+          "type": "string",
+          "pattern": "^(100(\\.0+)?|[0-9]{1,2}(\\.[0-9]+)?)$"
+        },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" }
+      },
+      "required": ["relationshipType", "parentEntityId", "validity"],
+      "additionalProperties": false
+    },
+    "serviceProvider": {
+      "type": "object",
+      "properties": {
+        "serviceRole": { "$ref": "common.schema.json#/$defs/code" },
+        "providerEntityId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" }
+      },
+      "required": ["serviceRole", "providerEntityId", "validity"],
+      "additionalProperties": false
+    },
+    "officer": {
+      "type": "object",
+      "properties": {
+        "personId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "fullName": {
+          "type": "string",
+          "description": "Optional display name, personal data. Omit unless the consumer is entitled to it."
+        },
+        "roleType": { "$ref": "common.schema.json#/$defs/code" },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" }
+      },
+      "required": ["personId", "roleType", "validity"],
+      "additionalProperties": false
+    },
+    "issuerAttributes": {
+      "type": "object",
+      "properties": {
+        "reportingCurrency": { "$ref": "common.schema.json#/$defs/currencyCode" },
+        "financialYearEnd": {
+          "type": "object",
+          "properties": {
+            "month": { "type": "integer", "minimum": 1, "maximum": 12 },
+            "day": { "type": "integer", "minimum": 1, "maximum": 31 }
+          },
+          "required": ["month", "day"],
+          "additionalProperties": false
+        },
+        "homeExchangeMic": {
+          "$ref": "common.schema.json#/$defs/micCode",
+          "description": "Relevant to foreign exempt listings, where the home exchange rules apply first."
+        },
+        "principalActivities": { "type": "string" },
+        "websiteUrl": { "type": "string", "pattern": "^https?://" },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" }
+      },
+      "required": ["validity"],
+      "additionalProperties": false
+    },
+    "classification": {
+      "type": "object",
+      "properties": {
+        "scheme": { "$ref": "common.schema.json#/$defs/code" },
+        "code": { "type": "string", "minLength": 1 },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" }
+      },
+      "required": ["scheme", "code", "validity"],
+      "additionalProperties": false
+    },
+    "issuerStatus": {
+      "type": "object",
+      "properties": {
+        "governingFramework": { "$ref": "common.schema.json#/$defs/code" },
+        "statusCode": { "$ref": "common.schema.json#/$defs/code" },
+        "listingCategory": { "$ref": "common.schema.json#/$defs/code" },
+        "reason": { "type": "string" },
+        "authorityRefId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" },
+        "provenance": { "$ref": "common.schema.json#/$defs/provenance" }
+      },
+      "required": ["governingFramework", "statusCode", "validity"],
+      "if": { "required": ["listingCategory"] },
+      "then": { "properties": { "governingFramework": { "const": "LISTING_RULES" } } },
+      "additionalProperties": false
+    },
+    "nominatedContact": {
+      "type": "object",
+      "properties": {
+        "personId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "isPrimary": { "type": "boolean" },
+        "complianceCourseCompletedOn": { "type": ["string", "null"], "format": "date" },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" }
+      },
+      "required": ["personId", "isPrimary", "validity"],
+      "additionalProperties": false
+    },
+    "issuedInstrument": {
+      "type": "object",
+      "properties": {
+        "instrumentId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "partyRole": { "$ref": "common.schema.json#/$defs/code" },
+        "validity": { "$ref": "common.schema.json#/$defs/validity" }
+      },
+      "required": ["instrumentId", "partyRole", "validity"],
+      "additionalProperties": false
+    }
+  }
+}
